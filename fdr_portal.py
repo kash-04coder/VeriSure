@@ -302,6 +302,10 @@ def verify_audit_chain():
 def _role(user):
     return {
         "Admin": "Bureau Admin",
+        "Competent Authority": "Bureau Admin",
+        "Institution": "Institution User",
+        "Scrutiny Officer": "Regional Officer",
+        "Bank Verifier": "Bank Verifier",
         "Investigator": "Regional Officer",
         "Analyst": "Regional Officer",
         "Viewer": "Institution User",
@@ -557,6 +561,23 @@ async def _store_upload(file, owner):
     conn.commit()
     conn.close()
     return upload_id, extraction
+
+
+def _ocr_values_match(field, claimed, extracted):
+    if not extracted:
+        return True
+    if field == "amount":
+        try:
+            return Decimal(str(claimed)).quantize(Decimal("0.01")) == Decimal(
+                str(extracted)
+            ).quantize(Decimal("0.01"))
+        except (InvalidOperation, TypeError, ValueError):
+            return False
+    if field in ("issue_date", "maturity_date"):
+        return str(claimed) == str(extracted)
+    return " ".join(str(claimed).split()).casefold() == " ".join(
+        str(extracted).split()
+    ).casefold()
 
 
 def _validate_instrument(data):
@@ -959,6 +980,31 @@ def create_instrument(
         conn.execute(
             "UPDATE fdr_documents SET instrument_id=?,used=1 WHERE upload_id=?",
             (instrument_id, upload_id),
+        )
+    ocr_mismatch = False
+    for field, extracted in candidates.items():
+        if field in field_values and not _ocr_values_match(
+            field, field_values[field], extracted
+        ):
+            ocr_mismatch = True
+            conn.execute(
+                "INSERT INTO fdr_discrepancies("
+                "instrument_id,field_name,explanation,created_at"
+                ") VALUES(?,?,?,?)",
+                (
+                    instrument_id,
+                    field,
+                    f"OCR candidate '{extracted}' differs from the institution-claimed "
+                    f"value '{field_values[field]}'. OCR is not confirmation; review "
+                    "the source document and obtain an independent response.",
+                    timestamp,
+                ),
+            )
+    if ocr_mismatch:
+        conn.execute(
+            "UPDATE fdr_instruments SET lifecycle_status='Discrepancy unresolved' "
+            "WHERE id=?",
+            (instrument_id,),
         )
     if duplicate:
         conn.execute("""

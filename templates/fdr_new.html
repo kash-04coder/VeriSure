@@ -6,7 +6,7 @@
 {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
 <div class="two-col form-layout">
     <section class="panel">
-        <div class="panel-head"><div><h2>Supporting FDR document</h2><p>PDF or PNG/JPEG · Maximum 10 MB</p></div></div>
+        <div class="panel-head"><div><h2>Supporting FDR document</h2><p>PDF or PNG/JPEG · Maximum 5 MB</p></div></div>
         <form method="post" action="/fdr/intake" enctype="multipart/form-data">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
             <label for="document">Upload receipt</label><input id="document" type="file" name="document" accept=".pdf,.png,.jpg,.jpeg" required>
