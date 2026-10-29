@@ -21,6 +21,7 @@ import sqlite3
 from datetime import datetime
 
 from encryption import encrypt_file
+from security import validate_upload
 from audit import log_action
 from ip_logger import log_ip_activity
 from evidence import calculate_hash
@@ -265,7 +266,7 @@ def add_version(document_id, file_bytes, filename, username, change_note,
 
 def _store_version(document_id, version_number, file_bytes, filename, username,
                     change_note, ip_address, action):
-    safe_filename = os.path.basename(filename)
+    safe_filename = validate_upload(file_bytes, filename)
     file_path = os.path.join(
         UPLOAD_FOLDER, f"doc{document_id}_v{version_number}_{safe_filename}"
     )

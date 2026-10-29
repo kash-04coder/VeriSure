@@ -30,7 +30,7 @@
     {% if user.role == 'Admin' %}
     <a href="/users" class="{{ 'active' if active=='users' }}">User Management</a>
     {% endif %}
-    <form method="post" action="/vault/lock" style="margin-top:10px;">
+    <form method="post" action="/vault/lock" style="margin-top:10px;"><input type="hidden" name="csrf" value="{{ csrf_token }}">
         <button type="submit" style="background:#334155;width:100%;height:38px;">Lock Vault</button>
     </form>
     <form method="post" action="/logout" style="margin-top:10px;">

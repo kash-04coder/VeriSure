@@ -15,7 +15,7 @@
 
 <div class="card">
     <h2 style="margin-top:0;">Edit Investigation</h2>
-    <form method="post" action="/cases/{{ case[1] }}/update">
+    <form method="post" action="/cases/{{ case[1] }}/update"><input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label>Case Name</label>
         <input type="text" name="case_name" value="{{ case[2] }}">
         <label>Description</label>
@@ -54,7 +54,7 @@
 
 <div class="card">
     <h2 style="margin-top:0;">Add Evidence to this Case</h2>
-    <form method="post" action="/cases/{{ case[1] }}/evidence/add" enctype="multipart/form-data">
+    <form method="post" action="/cases/{{ case[1] }}/evidence/add" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label>Evidence Title</label>
         <input type="text" name="title" required>
         <label>Upload Evidence</label>
@@ -80,7 +80,7 @@
     <h2 style="margin-top:0;">Admin Actions</h2>
     <div style="display:flex;gap:12px;">
         {% if case[6] != 'Closed' %}
-        <form method="post" action="/cases/{{ case[1] }}/close" style="flex:1;">
+        <form method="post" action="/cases/{{ case[1] }}/close" style="flex:1;"><input type="hidden" name="csrf" value="{{ csrf_token }}">
             <button type="submit">✅ Close &amp; Sign Case</button>
         </form>
         {% else %}
@@ -88,7 +88,7 @@
             <button type="button" onclick="window.location.href=this.parentElement.href">📄 Download Signed Case Report</button>
         </a>
         {% endif %}
-        <form method="post" action="/cases/{{ case[1] }}/delete" style="flex:1;">
+        <form method="post" action="/cases/{{ case[1] }}/delete" style="flex:1;"><input type="hidden" name="csrf" value="{{ csrf_token }}">
             <button type="submit" style="background:#7f1d1d;">🗑 Delete Case</button>
         </form>
     </div>

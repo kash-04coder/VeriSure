@@ -19,13 +19,12 @@ from urllib.parse import quote_plus
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from security import MAX_UPLOAD_BYTES, validate_upload
 
 
 DB = os.environ.get("FDR_DATABASE_PATH", "forensic.db")
 USER_DB = "forensic.db"
 UPLOAD_ROOT = Path(os.environ.get("FDR_UPLOAD_DIR", "uploads/fdr")).resolve()
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 REQUIRED_FIELDS = (
     "fdr_number", "bank", "branch", "amount", "issue_date",
     "maturity_date", "holder",
@@ -523,25 +522,10 @@ def _candidate_fields(text):
 
 
 async def _store_upload(file, owner):
-    filename = Path(file.filename or "").name
-    suffix = Path(filename).suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(400, "Upload a PDF, PNG or JPEG file.")
+    filename = file.filename or ""
     content = await file.read(MAX_UPLOAD_BYTES + 1)
-    if not content or len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(400, "File must be non-empty and no larger than 10 MB.")
-    if suffix == ".pdf":
-        if not content.startswith(b"%PDF-"):
-            raise HTTPException(400, "The uploaded file is not a valid PDF.")
-    else:
-        try:
-            from PIL import Image
-            image = Image.open(io.BytesIO(content))
-            image.verify()
-            if image.format not in {"PNG", "JPEG"}:
-                raise ValueError("Unsupported image format.")
-        except Exception as exc:
-            raise HTTPException(400, "The uploaded image could not be validated.") from exc
+    filename = validate_upload(content, filename)
+    suffix = Path(filename).suffix.lower()
 
     upload_id = uuid.uuid4().hex
     destination = UPLOAD_ROOT / f"{upload_id}{suffix}"

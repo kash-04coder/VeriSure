@@ -23,7 +23,7 @@
 {% for u in users %}
 <div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
     <div style="flex:2;min-width:150px;"><b>{{ u.username }}</b></div>
-    <form method="post" action="/users/update-role" style="flex:2;min-width:200px;display:flex;gap:8px;align-items:center;">
+    <form method="post" action="/users/update-role" style="flex:2;min-width:200px;display:flex;gap:8px;align-items:center;"><input type="hidden" name="csrf" value="{{ csrf_token }}">
         <input type="hidden" name="user_id" value="{{ u.id }}">
         <select name="role" style="margin:0;">
             {% for r in ["Viewer", "Analyst", "Investigator", "Admin"] %}
@@ -36,7 +36,7 @@
         {% if u.username == user.username %}
         <div class="info" style="max-width:150px;">Current User</div>
         {% else %}
-        <form method="post" action="/users/delete" style="max-width:120px;">
+        <form method="post" action="/users/delete" style="max-width:120px;"><input type="hidden" name="csrf" value="{{ csrf_token }}">
             <input type="hidden" name="user_id" value="{{ u.id }}">
             <button type="submit" style="background:#7f1d1d;">🗑 Delete</button>
         </form>
@@ -47,7 +47,7 @@
 
 <div class="card">
     <h3 style="margin-top:0;">➕ Create New User</h3>
-    <form method="post" action="/users/create">
+    <form method="post" action="/users/create"><input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label>New Username</label>
         <input type="text" name="username" required>
         <label>New Password</label>

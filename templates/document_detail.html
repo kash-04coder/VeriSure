@@ -29,7 +29,7 @@
             </table>
 
             <h3>Upload New Version</h3>
-            <form method="post" action="/documents/{{ document.id }}/version" enctype="multipart/form-data">
+            <form method="post" action="/documents/{{ document.id }}/version" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf_token }}">
                 <label>Change Note</label>
                 <input type="text" name="change_note" placeholder="What changed and why" required>
                 <label>File</label>
@@ -70,7 +70,7 @@
                 <a href="/documents/{{ document.id }}/forensics">View Full Forensic Analysis</a>
             {% else %}
                 <p>No forensic verification has been completed yet.</p>
-                <form method="post" action="/documents/{{ document.id }}/forensics/run">
+                <form method="post" action="/documents/{{ document.id }}/forensics/run"><input type="hidden" name="csrf" value="{{ csrf_token }}">
                     <button type="submit">Run Forensic Verification</button>
                 </form>
             {% endif %}
@@ -78,7 +78,7 @@
 
         <div class="card">
             <h2 style="margin-top:0;">Integrity Verification</h2>
-            <form method="post" action="/documents/{{ document.id }}/verify">
+            <form method="post" action="/documents/{{ document.id }}/verify"><input type="hidden" name="csrf" value="{{ csrf_token }}">
                 <button type="submit" style="width:100%;">Run Full Verification</button>
             </form>
 

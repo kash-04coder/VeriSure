@@ -1,4 +1,4 @@
-# AICTE FDR Guard
+# Verisure · AICTE FDR Guard
 
 AICTE FDR Guard is a local, database-backed prototype for security-deposit and Fixed Deposit Receipt (FDR) workflows. It extends the existing LexGuard FastAPI/SQLite application and retains the original forensic document features.
 
@@ -9,14 +9,25 @@ AICTE FDR Guard is a local, database-backed prototype for security-deposit and F
 Use Python 3.11 or newer. From PowerShell in the repository directory:
 
 ```powershell
-python -m venv .venv
+py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-$env:LEXGUARD_SESSION_SECRET = (python -c "import secrets; print(secrets.token_urlsafe(48))")
+Copy-Item .env.example .env
+# Replace the placeholder values in .env with local secrets.
 python -m uvicorn app:app --reload --port 8000
 ```
 
-Open <http://127.0.0.1:8000>. The session secret is required at startup and should be stored in a local environment or secret manager for repeatable sessions; do not commit it. For HTTPS deployments, set `LEXGUARD_HTTPS_ONLY=true`. The application no longer creates the old `admin` / `admin123` account. Login with an account created by the original app or seed the synthetic demo users below.
+Open <http://127.0.0.1:8000>. The session secret is required at startup and should be stored in `.env` or a
+secret manager; do not commit it. The optional administrator password and SMTP
+settings are also loaded from `.env`. For HTTPS deployments, set
+`LEXGUARD_HTTPS_ONLY=true`. The application no longer accepts the legacy
+`admin` / `admin123` credential. Login with an account created by the original
+app or seed the synthetic demo users below.
+
+The ASGI entry point is `app.py`; the HTTP implementation is under `routes/`.
+The former nested copy and historical raw-HTTP `webapp.py` entry point have
+been removed. Uploads are restricted to validated PDF/PNG/JPEG files up to
+5 MB, and all state-changing forms require a CSRF token.
 
 ### Synthetic demo accounts
 

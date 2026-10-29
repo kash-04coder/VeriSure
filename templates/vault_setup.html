@@ -8,7 +8,7 @@
     <div class="info">LexGuard does not store the master password. Only a
     PBKDF2-HMAC-SHA256 derived value and a random salt are stored.</div>
     <div class="card">
-        <form method="post" action="/vault/setup">
+        <form method="post" action="/vault/setup"><input type="hidden" name="csrf" value="{{ csrf_token }}">
             <label>Create Master Password</label>
             <input type="password" name="master_password" required>
             <label>Confirm Master Password</label>

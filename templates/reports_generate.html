@@ -6,7 +6,7 @@
 
 {% if evidence_list %}
 <div class="card">
-    <form method="post" action="/reports/generate/download">
+    <form method="post" action="/reports/generate/download"><input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label>Select Evidence</label>
         <select name="evidence_id">
             {% for e in evidence_list %}

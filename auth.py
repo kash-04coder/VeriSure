@@ -18,6 +18,14 @@ import sqlite3
 import hashlib
 import hmac
 import secrets
+import time
+
+from config import ADMIN_PASSWORD, ADMIN_USERNAME
+
+
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_SECONDS = 15 * 60
+_LOGIN_FAILURES = {}
 
 PBKDF2_ITERATIONS = 600_000
 SALT_SIZE = 16
@@ -58,13 +66,28 @@ def _verify_password(password, stored):
 
 
 def create_default_admin():
-    """Compatibility shim: default privileged accounts are no longer created."""
-    return None
+    """Optionally bootstrap one administrator from environment configuration."""
+    if not ADMIN_PASSWORD:
+        return None
+    conn = sqlite3.connect("forensic.db")
+    existing = conn.execute(
+        "SELECT 1 FROM users WHERE username=?", (ADMIN_USERNAME,)
+    ).fetchone()
+    conn.close()
+    if existing:
+        return None
+    return create_user(ADMIN_USERNAME, ADMIN_PASSWORD, "Admin")
 
 
 def login(username, password):
-    if username == "admin" and password == "admin123":
+    if username == ADMIN_USERNAME and not ADMIN_PASSWORD:
         return None
+    now = time.monotonic()
+    failure = _LOGIN_FAILURES.get(username)
+    if failure and now - failure["started"] < LOCKOUT_SECONDS:
+        return None
+    if failure:
+        _LOGIN_FAILURES.pop(username, None)
     conn = sqlite3.connect("forensic.db")
     c = conn.cursor()
     c.execute(
@@ -76,7 +99,16 @@ def login(username, password):
     if result:
         stored_password, role = result
         if _verify_password(password, stored_password):
+            _LOGIN_FAILURES.pop(username, None)
             return role
+    record = _LOGIN_FAILURES.setdefault(
+        username, {"count": 0, "started": now}
+    )
+    if now - record["started"] >= LOCKOUT_SECONDS:
+        record.update(count=0, started=now)
+    record["count"] += 1
+    if record["count"] >= MAX_LOGIN_ATTEMPTS:
+        record["started"] = now
     return None
 
 

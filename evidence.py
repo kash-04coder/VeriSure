@@ -5,6 +5,7 @@ from datetime import datetime
 from encryption import encrypt_file
 from audit import log_action
 from ip_logger import log_ip_activity
+from security import validate_upload
 
 UPLOAD_FOLDER = "uploads"
 
@@ -20,7 +21,7 @@ def calculate_hash(file_path):
 
 def save_evidence(case_id, title, filename, file_bytes, username, ip_address="Not recorded"):
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    safe_filename = os.path.basename(filename)
+    safe_filename = validate_upload(file_bytes, filename)
     file_path = os.path.join(UPLOAD_FOLDER, safe_filename)
     print("Saving to:", file_path)
     with open(file_path, "wb") as f:
