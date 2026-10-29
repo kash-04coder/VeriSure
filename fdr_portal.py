@@ -467,8 +467,18 @@ def _scan_maturities(conn, today):
                 _audit(conn, {"username": "deadline-monitor", "role": "System"},
                        "Instrument matured", "instrument", row["id"],
                        "Maturity date passed; no release or renewal was assumed.")
+        if days < -15:
+            escalated = conn.execute("""
+                UPDATE fdr_instruments SET lifecycle_status='Escalated'
+                WHERE id=? AND lifecycle_status NOT IN ('Renewed','Released','Escalated')
+            """, (row["id"],))
+            if escalated.rowcount:
+                _audit(conn, {"username": "deadline-monitor", "role": "System"},
+                       "Instrument escalated", "instrument", row["id"],
+                       "Renewal or resolution remains overdue by more than 15 days.")
         reminder = next((threshold for threshold in thresholds if days == threshold), None)
         event_type = f"maturity-{reminder}" if reminder is not None else (
+            "maturity-escalated" if days < -15 else
             "maturity-overdue" if days < 0 else None
         )
         if event_type:
@@ -480,7 +490,9 @@ def _scan_maturities(conn, today):
             """, (
                 row["id"], key,
                 f"FDR {row['fdr_number']} is " +
-                (f"due in {reminder} days." if reminder is not None else "overdue."),
+                (f"due in {reminder} days." if reminder is not None else
+                 "escalated after more than 15 overdue days." if days < -15 else
+                 "overdue."),
                 row["maturity_date"], _now(),
             ))
             if inserted.rowcount:
