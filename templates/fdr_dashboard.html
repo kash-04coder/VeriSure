@@ -3,10 +3,12 @@
 {% block page_title %}Overview dashboard{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">COMMAND VIEW · {{ today }}</p><h1>Security deposit overview</h1><p>Monitor instrument validity, independent verification and actions due.</p></div><a class="button primary" href="/fdr/registry">Open registry</a></div>
+<form class="global-search" method="get" action="/fdr/dashboard"><input name="q" value="{{ q }}" placeholder="Search institution, FDR, bank or status" aria-label="Search institution, FDR, bank or status"><button class="button" type="submit">Search</button>{% if q %}<a href="/fdr/dashboard">Clear</a>{% endif %}</form>
 <div class="kpi-grid">
     <a class="kpi" href="/fdr/registry"><span>Total instruments</span><strong>{{ kpis.total }}</strong><small>Across your authorized scope</small></a>
     <div class="kpi"><span>Recorded deposit value</span><strong class="value-small">₹ {{ kpis.value }}</strong><small>Values submitted by institutions</small></div>
     <a class="kpi" href="/fdr/registry?status=Active"><span>Active instruments</span><strong>{{ kpis.active }}</strong><small>Lifecycle status: active</small></a>
+    <a class="kpi alert" href="/fdr/registry?status=Expiring"><span>Expiring</span><strong>{{ kpis.expiring_status }}</strong><small>Within configured reminder window</small></a>
     <a class="kpi alert" href="/fdr/maturity?urgency=30"><span>Expiring in 30 days</span><strong>{{ kpis.expiring }}</strong><small>Prioritize renewal review</small></a>
     <a class="kpi" href="/fdr/registry?status=Under%20verification"><span>Pending verification</span><strong>{{ kpis.pending }}</strong><small>At least one field awaits a bank</small></a>
     <a class="kpi alert" href="/fdr/registry?status=Discrepancy%20unresolved"><span>Open discrepancies</span><strong>{{ kpis.discrepancies }}</strong><small>Requires scrutiny</small></a>
@@ -14,13 +16,16 @@
     <a class="kpi alert" href="/fdr/maturity?urgency=overdue"><span>Overdue instruments</span><strong>{{ kpis.overdue }}</strong><small>Maturity does not imply release</small></a>
     <a class="kpi" href="/fdr/registry?status=Matured"><span>Matured instruments</span><strong>{{ kpis.matured }}</strong><small>Awaiting an explicit next action</small></a>
     <a class="kpi" href="/fdr/registry?status=Renewal%20pending"><span>Renewals pending</span><strong>{{ kpis.renewals }}</strong><small>Originals remain in the record</small></a>
+    <a class="kpi" href="/fdr/registry?status=Renewed"><span>Renewed</span><strong>{{ kpis.renewed }}</strong><small>Replacement verified by an officer</small></a>
+    <a class="kpi" href="/fdr/registry?status=Released"><span>Released</span><strong>{{ kpis.released }}</strong><small>Approved and completed releases</small></a>
 </div>
+<section class="panel performance-panel"><div class="panel-head"><div><h2>Performance</h2><p>Portal-wide operational measures</p></div></div><div class="performance-grid"><div><span>Average verification time</span><strong>{{ performance.verification_hours ~ ' h' if performance.verification_hours is not none else '—' }}</strong></div><div><span>Reminders sent</span><strong>{{ performance.reminders_sent }}</strong></div><div><span>Cases resolved</span><strong>{{ performance.cases_resolved }}</strong></div></div></section>
 <div class="two-col chart-row">
     <section class="panel"><div class="panel-head"><div><h2>Lifecycle distribution</h2><p>Calculated from visible FDR records</p></div></div>
-    {% for item in status_chart %}<a class="bar-row" href="/fdr/registry?status={{ item.label|urlencode }}"><span>{{ item.label }}</span><div class="bar-track"><i style="width:{{ item.percent }}%"></i></div><strong>{{ item.count }}</strong></a>{% else %}<p class="empty">No records to chart.</p>{% endfor %}
+    {% if status_chart %}<div class="chart-canvas"><canvas id="lifecycle-chart" aria-label="Lifecycle distribution chart" role="img"></canvas></div><ul class="chart-legend">{% for item in status_chart %}<li><a href="/fdr/registry?status={{ item.label|urlencode }}">{{ item.label }}</a><strong>{{ item.count }}</strong></li>{% endfor %}</ul>{% else %}<p class="empty">No records to chart.</p>{% endif %}
     </section>
     <section class="panel"><div class="panel-head"><div><h2>Maturity trend</h2><p>Upcoming maturity dates by month</p></div></div>
-    {% for item in maturity_chart %}<div class="bar-row"><span>{{ item.month }}</span><div class="bar-track"><i style="width:{{ item.percent }}%"></i></div><strong>{{ item.count }}</strong></div>{% else %}<p class="empty">No maturity data to chart.</p>{% endfor %}
+    {% if maturity_chart %}<div class="chart-canvas"><canvas id="maturity-chart" aria-label="Maturity dates by month chart" role="img"></canvas></div>{% else %}<p class="empty">No maturity data to chart.</p>{% endif %}
     </section>
 </div>
 <div class="two-col">
@@ -38,4 +43,25 @@
     </section>
 </div>
 <div class="footnote">Recorded values are institution claims until independently confirmed. OCR candidates never constitute bank confirmation.</div>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const palette = ["#2a9d8f", "#e9c46a", "#e76f51", "#457b9d", "#7b6d8d", "#8ab17d", "#d17b49"];
+    const lifecycle = {{ status_chart|tojson }};
+    const maturities = {{ maturity_chart|tojson }};
+    if (lifecycle.length) {
+        new Chart(document.getElementById("lifecycle-chart"), {
+            type: "doughnut",
+            data: {labels: lifecycle.map(item => item.label), datasets: [{data: lifecycle.map(item => item.count), backgroundColor: palette, borderWidth: 0}]},
+            options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}}
+        });
+    }
+    if (maturities.length) {
+        new Chart(document.getElementById("maturity-chart"), {
+            type: "bar",
+            data: {labels: maturities.map(item => item.month), datasets: [{data: maturities.map(item => item.count), backgroundColor: "#2a9d8f", borderRadius: 3}]},
+            options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, ticks: {precision: 0}}}}
+        });
+    }
+});
+</script>
 {% endblock %}

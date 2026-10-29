@@ -9,10 +9,12 @@ import logging
 import os
 import re
 import secrets
+import smtplib
 import sqlite3
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -190,6 +192,8 @@ def init_fdr_db():
             message TEXT NOT NULL,
             due_date TEXT NOT NULL,
             created_at TEXT NOT NULL,
+            recipient_username TEXT NOT NULL DEFAULT '',
+            recipient_role TEXT NOT NULL DEFAULT '',
             read_at TEXT
         );
         CREATE TABLE IF NOT EXISTS fdr_settings (
@@ -216,6 +220,17 @@ def init_fdr_db():
     conn.execute(
         "INSERT OR IGNORE INTO fdr_settings(key, value) VALUES('reminder_days', '[90,60,30,7]')"
     )
+    notification_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(fdr_notifications)")
+    }
+    if "recipient_username" not in notification_columns:
+        conn.execute(
+            "ALTER TABLE fdr_notifications ADD COLUMN recipient_username TEXT NOT NULL DEFAULT ''"
+        )
+    if "recipient_role" not in notification_columns:
+        conn.execute(
+            "ALTER TABLE fdr_notifications ADD COLUMN recipient_role TEXT NOT NULL DEFAULT ''"
+        )
     conn.execute(
         "INSERT OR IGNORE INTO fdr_rule_sets(version, rules_json, created_by, created_at, active) "
         "VALUES(1, ?, 'system', ?, 1)",
@@ -351,16 +366,43 @@ def _check_csrf(request, submitted):
         raise HTTPException(status_code=403, detail="Invalid or missing CSRF token.")
 
 
+def _notification_query(conn, user, unread_only=False):
+    sql = """
+        SELECT n.*,i.fdr_number,ins.name AS institution_name
+        FROM fdr_notifications n
+        JOIN fdr_instruments i ON i.id=n.instrument_id
+        JOIN fdr_institutions ins ON ins.id=i.institution_id
+        WHERE (n.recipient_username=? OR n.recipient_username='')
+    """
+    params = [user["username"]]
+    if unread_only:
+        sql += " AND n.read_at IS NULL"
+    scope_ids = _scope_ids(user)
+    if scope_ids is not None:
+        if not scope_ids:
+            sql += " AND 0=1"
+        else:
+            sql += " AND i.institution_id IN (" + ",".join("?" for _ in scope_ids) + ")"
+            params.extend(scope_ids)
+    sql += " ORDER BY n.id DESC"
+    return conn.execute(sql, params)
+
+
 def _render(request, template, user=None, active="", **context):
+    current_user = user or _require_user(request) or {
+        "username": "Secure verifier link", "role": "Bank Verifier"
+    }
     public_link = user is None and _require_user(request) is None
+    conn = connect()
+    unread_count = len(_notification_query(conn, current_user, unread_only=True).fetchall())
+    conn.close()
     return templates.TemplateResponse(request, template, {
-        "user": user or _require_user(request) or {
-            "username": "Secure verifier link", "role": "Bank Verifier"
-        },
+        "user": current_user,
         "public_link": public_link,
         "active": active,
         "csrf_token": _csrf_token(request),
         "demo_mode": True,
+        "unread_count": unread_count,
         **context,
     })
 
@@ -399,14 +441,16 @@ def _visible_instrument(conn, instrument_id, user):
 def _visible_instruments(user, search="", status=""):
     conn = connect()
     query = """
-        SELECT i.*, ins.name AS institution_name, ins.region,
+    SELECT i.*, ins.name AS institution_name, ins.region,
+           original.fdr_number AS replaces_fdr_number,
                (SELECT COUNT(*) FROM fdr_field_values fv
                 WHERE fv.instrument_id=i.id
-                AND fv.verification_status='Pending bank verification') AS pending_fields,
+        AND fv.verification_status!='Bank-confirmed') AS pending_fields,
                (SELECT COUNT(*) FROM fdr_discrepancies d
                 WHERE d.instrument_id=i.id AND d.status='Open') AS open_discrepancies
         FROM fdr_instruments i
         JOIN fdr_institutions ins ON ins.id=i.institution_id
+    LEFT JOIN fdr_instruments original ON original.id=i.replaces_id
         WHERE 1=1
     """
     params = []
@@ -419,8 +463,8 @@ def _visible_instruments(user, search="", status=""):
         params.extend(scope_ids)
     if search:
         like = f"%{search.strip()}%"
-        query += " AND (i.fdr_number LIKE ? OR i.bank LIKE ? OR ins.name LIKE ?)"
-        params.extend([like, like, like])
+        query += " AND (i.fdr_number LIKE ? OR i.bank LIKE ? OR ins.name LIKE ? OR i.lifecycle_status LIKE ?)"
+        params.extend([like, like, like, like])
     if status:
         query += " AND i.lifecycle_status=?"
         params.append(status)
@@ -441,6 +485,65 @@ def _effective_date(conn):
     return date.today() + timedelta(days=offset)
 
 
+def _notification_recipients(conn, instrument, event_type):
+    with sqlite3.connect(USER_DB) as users_conn:
+        users_conn.row_factory = sqlite3.Row
+        accounts = users_conn.execute("SELECT username,role FROM users").fetchall()
+    scoped = {
+        row["username"] for row in conn.execute(
+            "SELECT username FROM fdr_user_scopes WHERE institution_id=?",
+            (instrument["institution_id"],),
+        ).fetchall()
+    }
+    if event_type == "maturity-escalated":
+        allowed_roles = {"Admin", "Competent Authority", "Bureau Admin"}
+    elif event_type == "maturity-overdue":
+        allowed_roles = {"Regional Officer", "Scrutiny Officer", "Bureau Admin"}
+    else:
+        allowed_roles = {
+            "Institution", "Institution User", "Viewer", "Regional Officer",
+            "Scrutiny Officer", "Bureau Admin",
+        }
+    recipients = []
+    for account in accounts:
+        if account["role"] not in allowed_roles:
+            continue
+        if account["role"] in {"Admin", "Competent Authority", "Bureau Admin"}:
+            in_scope = event_type == "maturity-escalated"
+        else:
+            in_scope = account["username"] in scoped
+        if account["username"] == instrument["assigned_officer"]:
+            in_scope = account["role"] in {
+                "Regional Officer", "Scrutiny Officer", "Bureau Admin"
+            }
+        if in_scope:
+            recipients.append((account["username"], account["role"]))
+    return recipients
+
+
+def _deliver_notification(recipient, subject, message):
+    host = os.environ.get("FDR_SMTP_HOST")
+    email_address = os.environ.get("FDR_NOTIFICATION_EMAIL")
+    if not host or not email_address:
+        logger.info("FDR notification for %s: %s", recipient, message)
+        return
+    email = EmailMessage()
+    email["Subject"] = subject
+    email["From"] = os.environ.get("FDR_SMTP_FROM", "fdr-notifications@localhost")
+    email["To"] = email_address
+    email.set_content(message)
+    try:
+        with smtplib.SMTP(host, int(os.environ.get("FDR_SMTP_PORT", "587")), timeout=15) as smtp:
+            smtp.starttls()
+            username = os.environ.get("FDR_SMTP_USERNAME")
+            password = os.environ.get("FDR_SMTP_PASSWORD")
+            if username and password:
+                smtp.login(username, password)
+            smtp.send_message(email)
+    except (OSError, smtplib.SMTPException, ValueError):
+        logger.exception("FDR notification email delivery failed for %s.", recipient)
+
+
 def _scan_maturities(conn, today):
     settings = _settings(conn)
     try:
@@ -449,7 +552,8 @@ def _scan_maturities(conn, today):
     except (ValueError, KeyError, TypeError, json.JSONDecodeError):
         thresholds = [90, 60, 30, 7]
     rows = conn.execute("""
-        SELECT id, fdr_number, maturity_date
+        SELECT id, institution_id, assigned_officer, created_by, fdr_number,
+               maturity_date, lifecycle_status
         FROM fdr_instruments
         WHERE lifecycle_status NOT IN ('Renewed', 'Released')
     """).fetchall()
@@ -458,10 +562,15 @@ def _scan_maturities(conn, today):
             days = (date.fromisoformat(row["maturity_date"]) - today).days
         except ValueError:
             continue
+        if days >= 0 and days <= max(thresholds, default=90):
+            conn.execute("""
+                UPDATE fdr_instruments SET lifecycle_status='Expiring'
+                WHERE id=? AND lifecycle_status='Active'
+            """, (row["id"],))
         if days < 0:
             matured = conn.execute("""
                 UPDATE fdr_instruments SET lifecycle_status='Matured'
-                WHERE id=? AND lifecycle_status IN ('Active','Under verification')
+                WHERE id=? AND lifecycle_status IN ('Active','Expiring','Under verification')
             """, (row["id"],))
             if matured.rowcount:
                 _audit(conn, {"username": "deadline-monitor", "role": "System"},
@@ -476,29 +585,32 @@ def _scan_maturities(conn, today):
                 _audit(conn, {"username": "deadline-monitor", "role": "System"},
                        "Instrument escalated", "instrument", row["id"],
                        "Renewal or resolution remains overdue by more than 15 days.")
-        reminder = next((threshold for threshold in thresholds if days == threshold), None)
-        event_type = f"maturity-{reminder}" if reminder is not None else (
-            "maturity-escalated" if days < -15 else
-            "maturity-overdue" if days < 0 else None
-        )
-        if event_type:
-            key = f"{row['id']}:{today.isoformat()}:{event_type}"
-            inserted = conn.execute("""
-                INSERT OR IGNORE INTO fdr_notifications(
-                    instrument_id,event_key,message,due_date,created_at
-                ) VALUES(?,?,?,?,?)
-            """, (
-                row["id"], key,
-                f"FDR {row['fdr_number']} is " +
-                (f"due in {reminder} days." if reminder is not None else
-                 "escalated after more than 15 overdue days." if days < -15 else
-                 "overdue."),
-                row["maturity_date"], _now(),
-            ))
-            if inserted.rowcount:
-                _audit(conn, {"username": "deadline-monitor", "role": "System"},
-                       "Maturity reminder generated", "instrument", row["id"],
-                       f"Prototype reminder threshold reached: {event_type}.")
+        reminders = [threshold for threshold in thresholds if days == threshold]
+        events = [(f"maturity-{threshold}", f"due in {threshold} days.")
+                  for threshold in reminders]
+        if days < 0:
+            events.append(("maturity-overdue", "overdue; officer renewal action is required."))
+        if days < -15:
+            events.append(("maturity-escalated", "escalated after more than 15 overdue days."))
+        for event_type, detail in events:
+            recipients = _notification_recipients(conn, row, event_type)
+            if not recipients:
+                recipients = [(row["created_by"], "Institution User")]
+            message = f"FDR {row['fdr_number']} is {detail}"
+            for username, role in recipients:
+                key = f"{row['id']}:{row['maturity_date']}:{event_type}:{username}"
+                inserted = conn.execute("""
+                    INSERT OR IGNORE INTO fdr_notifications(
+                        instrument_id,event_key,message,due_date,created_at,
+                        recipient_username,recipient_role
+                    ) VALUES(?,?,?,?,?,?,?)
+                """, (row["id"], key, message, row["maturity_date"], _now(),
+                      username, role))
+                if inserted.rowcount:
+                    _deliver_notification(username, f"FDR {event_type.replace('-', ' ')}", message)
+                    _audit(conn, {"username": "deadline-monitor", "role": "System"},
+                           "Maturity reminder generated", "instrument", row["id"],
+                           f"{event_type} notification sent to {username}.")
 
 
 def scan_deadlines():
@@ -653,9 +765,9 @@ def _eligibility(conn, instrument_id, rule_version=None):
          "explanation": "A supporting document is attached." if document else
          "Attach the required supporting document."},
         {"name": "Required fields confirmed",
-         "passed": verified or not rules.get("require_verified", True),
+         "passed": verified,
          "explanation": "All critical fields are bank-confirmed." if verified else
-         "Complete independent bank confirmation for every critical field."},
+         "Every critical field must be independently bank-confirmed before release."},
         {"name": "No unresolved discrepancy",
          "passed": not discrepancy or not rules.get("block_discrepancy", True),
          "explanation": "No open discrepancy is recorded." if not discrepancy else
@@ -663,6 +775,25 @@ def _eligibility(conn, instrument_id, rule_version=None):
     ]
     return {"rule_set_version": version, "checks": checks,
             "eligible": all(check["passed"] for check in checks)}
+
+
+def _officer_recipients(conn, institution_id, assigned_officer=""):
+    with sqlite3.connect(USER_DB) as users_conn:
+        users_conn.row_factory = sqlite3.Row
+        accounts = users_conn.execute(
+            "SELECT username,role FROM users WHERE role IN ('Regional Officer','Scrutiny Officer','Bureau Admin') ORDER BY username"
+        ).fetchall()
+    scoped = {
+        row["username"] for row in conn.execute(
+            "SELECT username FROM fdr_user_scopes WHERE institution_id=?",
+            (institution_id,),
+        ).fetchall()
+    }
+    return [
+        (account["username"], account["role"])
+        for account in accounts
+        if account["username"] == assigned_officer or account["username"] in scoped
+    ]
 
 
 def _release_visible(conn, release_id, user):
@@ -684,34 +815,45 @@ def fdr_root():
 
 
 @router.get("/fdr/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request):
+def dashboard(request: Request, q: str = ""):
     user = _require_user(request)
     if not user:
         return RedirectResponse("/login")
-    rows = _visible_instruments(user)
     conn = connect()
     today = _effective_date(conn)
     _scan_maturities(conn, today)
     conn.commit()
-    scope_ids = _scope_ids(user)
-    notification_sql = """
-        SELECT n.*, i.fdr_number FROM fdr_notifications n
-        JOIN fdr_instruments i ON i.id=n.instrument_id
-    """
-    notification_params = []
-    if scope_ids is not None:
-        if scope_ids:
-            notification_sql += " WHERE i.institution_id IN (" + ",".join(
-                "?" for _ in scope_ids
-            ) + ")"
-            notification_params.extend(scope_ids)
-        else:
-            notification_sql += " WHERE 0=1"
-    notification_sql += " ORDER BY n.id DESC LIMIT 8"
-    notifications = conn.execute(notification_sql, notification_params).fetchall()
+    rows = _visible_instruments(user, search=q)
+    notifications = _notification_query(conn, user).fetchall()[:8]
     releases = conn.execute(
         "SELECT COUNT(*) AS count FROM fdr_release_requests WHERE status IN ('Submitted','Under scrutiny','Recommended')"
     ).fetchone()["count"]
+    visible_ids = [row["id"] for row in rows]
+    if visible_ids:
+        marks = ",".join("?" for _ in visible_ids)
+        verification_seconds = conn.execute(f"""
+            SELECT AVG((julianday(v.created_at)-julianday(r.created_at))*86400) AS seconds
+            FROM fdr_verification_requests r
+            JOIN fdr_verification_responses v ON v.request_id=r.id
+            WHERE r.instrument_id IN ({marks})
+        """, visible_ids).fetchone()["seconds"]
+        reminders_sent = conn.execute(
+            f"SELECT COUNT(*) AS count FROM fdr_notifications WHERE instrument_id IN ({marks})",
+            visible_ids,
+        ).fetchone()["count"]
+        resolved_discrepancies = conn.execute(
+            f"SELECT COUNT(*) AS count FROM fdr_discrepancies WHERE status='Resolved' AND instrument_id IN ({marks})",
+            visible_ids,
+        ).fetchone()["count"]
+        resolved_releases = conn.execute(
+            f"SELECT COUNT(*) AS count FROM fdr_release_requests WHERE status IN ('Released','Rejected') AND instrument_id IN ({marks})",
+            visible_ids,
+        ).fetchone()["count"]
+        resolved_cases = resolved_discrepancies + resolved_releases
+    else:
+        verification_seconds = None
+        reminders_sent = 0
+        resolved_cases = 0
     conn.close()
     total_amount = sum((Decimal(r["amount"]) for r in rows), Decimal("0.00"))
     expiring = 0
@@ -727,13 +869,16 @@ def dashboard(request: Request):
         "total": len(rows),
         "value": f"{total_amount:,.2f}",
         "active": sum(r["lifecycle_status"] == "Active" for r in rows),
+        "expiring_status": sum(r["lifecycle_status"] == "Expiring" for r in rows),
         "expiring": expiring,
         "pending": sum(r["pending_fields"] > 0 for r in rows),
         "discrepancies": sum(r["open_discrepancies"] > 0 for r in rows),
         "releases": releases if _is_admin(user) else 0,
         "overdue": overdue,
         "matured": sum(r["lifecycle_status"] == "Matured" for r in rows),
-        "renewals": sum(r["lifecycle_status"] == "Renewal pending" for r in rows),
+        "renewals": sum(r["lifecycle_status"] in ("Renewed", "Renewal pending") for r in rows),
+        "renewed": sum(r["lifecycle_status"] == "Renewed" for r in rows),
+        "released": sum(r["lifecycle_status"] == "Released" for r in rows),
     }
     lifecycle_counts = {}
     for row in rows:
@@ -754,10 +899,57 @@ def dashboard(request: Request):
          "percent": round(count / max(maturity_months.values()) * 100)}
         for month, count in sorted(maturity_months.items())[:8]
     ]
+    performance = {
+        "verification_hours": round(verification_seconds / 3600, 1)
+        if verification_seconds is not None else None,
+        "reminders_sent": reminders_sent,
+        "cases_resolved": resolved_cases,
+    }
     return _render(request, "fdr_dashboard.html", user, "dashboard",
                    kpis=kpis, instruments=rows[:8], notifications=notifications,
                    today=today.isoformat(), status_chart=status_chart,
-                   maturity_chart=maturity_chart)
+                   maturity_chart=maturity_chart, performance=performance, q=q)
+
+
+@router.get("/fdr/notifications", response_class=HTMLResponse)
+def notifications_page(request: Request):
+    user = _require_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    conn = connect()
+    notifications = _notification_query(conn, user).fetchall()
+    conn.close()
+    return _render(request, "fdr_notifications.html", user, "notifications",
+                   notifications=notifications)
+
+
+@router.post("/fdr/notifications/{notification_id:int}/read")
+def mark_notification_read(request: Request, notification_id: int,
+                           csrf: str = Form(...)):
+    user = _require_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    _check_csrf(request, csrf)
+    conn = connect()
+    row = conn.execute(
+        "SELECT id,instrument_id,recipient_username FROM fdr_notifications WHERE id=?",
+        (notification_id,),
+    ).fetchone()
+    if not row or (row["recipient_username"] not in ("", user["username"])):
+        conn.close()
+        raise HTTPException(404, "Notification not found.")
+    if not _visible_instrument(conn, row["instrument_id"], user):
+        conn.close()
+        raise HTTPException(404, "Notification not found.")
+    conn.execute(
+        "UPDATE fdr_notifications SET read_at=COALESCE(read_at,?) WHERE id=?",
+        (_now(), notification_id),
+    )
+    _audit(conn, user, "Notification marked read", "notification", notification_id,
+           "Recipient acknowledged an FDR notification.")
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/fdr/notifications", status_code=303)
 
 
 @router.get("/fdr/registry", response_class=HTMLResponse)
@@ -805,24 +997,17 @@ def renewal_history(request: Request):
     if not user:
         return RedirectResponse("/login")
     instruments = _visible_instruments(user)
-    rows = []
-    conn = connect()
-    for item in instruments:
-        if item["replaces_id"] or item["lifecycle_status"] == "Renewal pending":
-            rows.append({**item, "relationship": "Replacement instrument"})
-        children = conn.execute("""
-            SELECT id,fdr_number,maturity_date,lifecycle_status
-            FROM fdr_instruments WHERE replaces_id=? AND institution_id=?
-            ORDER BY id DESC
-        """, (item["id"], item["institution_id"])).fetchall()
-        rows.extend({
-            "id": child["id"], "fdr_number": child["fdr_number"],
-            "maturity_date": child["maturity_date"],
-            "lifecycle_status": child["lifecycle_status"],
-            "institution_name": item["institution_name"],
-            "relationship": f"Replaces {item['fdr_number']}",
-        } for child in children)
-    conn.close()
+    rows = [
+        {
+            **item,
+            "relationship": (
+                f"Replaces {item['replaces_fdr_number']}" if item["replaces_id"]
+                else "Original instrument"
+            ),
+        }
+        for item in instruments
+        if item["replaces_id"] or item["lifecycle_status"] in ("Renewal pending", "Renewed")
+    ]
     return _render(request, "fdr_renewals.html", user, "renewals", instruments=rows)
 
 
@@ -834,14 +1019,31 @@ def reports_page(request: Request):
     rows = _visible_instruments(user)
     conn = connect()
     today = _effective_date(conn)
+    documented = {
+        row["instrument_id"] for row in conn.execute(
+            "SELECT DISTINCT instrument_id FROM fdr_documents WHERE instrument_id IS NOT NULL"
+        ).fetchall()
+    }
     conn.close()
     reports = [
         {"label": "Complete FDR registry", "key": "registry", "count": len(rows)},
         {"label": "Pending verifications", "key": "pending",
          "count": sum(bool(item["pending_fields"]) for item in rows)},
+        *[
+            {"label": f"Upcoming maturities within {days} days",
+             "key": f"upcoming_{days}",
+             "count": sum(
+                 0 <= (date.fromisoformat(item["maturity_date"]) - today).days <= days
+                 for item in rows
+             )}
+            for days in (30, 60, 90)
+        ],
+        {"label": "Missing supporting documents", "key": "missing_documents",
+         "count": sum(item["id"] not in documented for item in rows)},
         {"label": "Overdue instruments", "key": "overdue",
          "count": sum(
              date.fromisoformat(item["maturity_date"]) < today
+             and item["lifecycle_status"] not in ("Renewed", "Released")
              for item in rows
          )},
         {"label": "Instruments with open discrepancies", "key": "discrepancies",
@@ -850,6 +1052,43 @@ def reports_page(request: Request):
          "count": sum(bool(item["replaces_id"]) for item in rows)},
     ]
     return _render(request, "fdr_reports.html", user, "reports", reports=reports)
+
+
+def _report_rows(user, report):
+    rows = _visible_instruments(user)
+    conn = connect()
+    today = _effective_date(conn)
+    documented = {
+        row["instrument_id"] for row in conn.execute(
+            "SELECT DISTINCT instrument_id FROM fdr_documents WHERE instrument_id IS NOT NULL"
+        ).fetchall()
+    }
+    conn.close()
+    if report == "pending":
+        return [row for row in rows if row["pending_fields"]]
+    if report.startswith("upcoming_"):
+        try:
+            window = int(report.split("_", 1)[1])
+        except ValueError as exc:
+            raise HTTPException(400, "Unknown report.") from exc
+        if window not in (30, 60, 90):
+            raise HTTPException(400, "Unknown report.")
+        return [row for row in rows if 0 <= (
+            date.fromisoformat(row["maturity_date"]) - today
+        ).days <= window]
+    if report == "missing_documents":
+        return [row for row in rows if row["id"] not in documented]
+    if report == "overdue":
+        return [row for row in rows if
+                date.fromisoformat(row["maturity_date"]) < today and
+                row["lifecycle_status"] not in ("Renewed", "Released")]
+    if report == "discrepancies":
+        return [row for row in rows if row["open_discrepancies"]]
+    if report == "renewals":
+        return [row for row in rows if row["replaces_id"]]
+    if report == "registry":
+        return rows
+    raise HTTPException(400, "Unknown report.")
 
 
 @router.get("/fdr/new", response_class=HTMLResponse)
@@ -876,6 +1115,7 @@ def new_instrument(request: Request, upload_id: str = "", error: str = ""):
             scoped_ids,
         ).fetchall()
     staged = None
+    original = None
     if upload_id:
         staged = conn.execute("""
             SELECT * FROM fdr_documents WHERE upload_id=? AND owner=? AND instrument_id IS NULL
@@ -945,7 +1185,8 @@ def create_instrument(
             errors.append("The uploaded document is no longer available; upload it again.")
     if replaces_id:
         original = conn.execute(
-            "SELECT institution_id FROM fdr_instruments WHERE id=?", (replaces_id,)
+            "SELECT institution_id,assigned_officer,fdr_number FROM fdr_instruments WHERE id=?",
+            (replaces_id,),
         ).fetchone()
         if not original or original["institution_id"] != institution_id:
             errors.append("A replacement must link to an existing instrument at the same institution.")
@@ -960,16 +1201,26 @@ def create_instrument(
         "SELECT 1 FROM fdr_instruments WHERE fdr_number_norm=? LIMIT 1", (normalized,)
     ).fetchone() is not None
     timestamp = _now()
+    assigned_officer = ""
+    renewal_recipients = []
+    if replaces_id:
+        renewal_recipients = _officer_recipients(
+            conn, institution_id, original["assigned_officer"]
+        )
+        if renewal_recipients:
+            assigned_officer = renewal_recipients[0][0]
     cursor = conn.execute("""
         INSERT INTO fdr_instruments(
             institution_id,fdr_number,fdr_number_norm,bank,branch,amount,issue_date,
-            maturity_date,holder,lifecycle_status,created_by,replaces_id,duplicate_flag,created_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,'Under verification',?,?,?,?)
+            maturity_date,holder,lifecycle_status,created_by,assigned_officer,replaces_id,
+            duplicate_flag,created_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,'Under verification',?,?,?,?,?)
     """, (
         institution_id, fdr_number.strip(), normalized, bank.strip(), branch.strip(),
         format(Decimal(amount).quantize(Decimal("0.01")), "f"),
         issue_date, maturity_date, holder.strip(),
-        user["username"], replaces_id or None, int(duplicate), timestamp,
+        user["username"], assigned_officer, replaces_id or None,
+        int(duplicate), timestamp,
     ))
     instrument_id = cursor.lastrowid
     field_values = {
@@ -1040,6 +1291,25 @@ def create_instrument(
             UPDATE fdr_instruments SET lifecycle_status='Renewal pending'
             WHERE id=? AND institution_id=?
         """, (replaces_id, institution_id))
+        if renewal_recipients:
+            recipient_role = renewal_recipients[0][1]
+            message = (
+                f"Replacement FDR {fdr_number.strip()} was submitted for officer "
+                f"verification and replaces {original['fdr_number']}."
+            )
+            conn.execute("""
+                INSERT OR IGNORE INTO fdr_notifications(
+                    instrument_id,event_key,message,due_date,created_at,
+                    recipient_username,recipient_role
+                ) VALUES(?,?,?,?,?,?,?)
+            """, (
+                instrument_id, f"renewal:{instrument_id}:{assigned_officer}",
+                message, maturity_date, timestamp, assigned_officer, recipient_role,
+            ))
+            _deliver_notification(assigned_officer, "Replacement FDR verification", message)
+        _audit(conn, user, "Replacement submitted for officer verification",
+               "instrument", instrument_id,
+               f"Replacement linked to original instrument {replaces_id}; officer verification is pending.")
     _audit(conn, user, "FDR submitted", "instrument", instrument_id,
            "Institution-claimed fields recorded; independent bank verification is pending.")
     conn.commit()
@@ -1310,6 +1580,14 @@ def scrutiny_action(request: Request, instrument_id: int,
         "UPDATE fdr_instruments SET lifecycle_status=? WHERE id=?",
         (next_status, instrument_id),
     )
+    if action == "mark_verified" and instrument["replaces_id"]:
+        conn.execute(
+            "UPDATE fdr_instruments SET lifecycle_status='Renewed' WHERE id=?",
+            (instrument["replaces_id"],),
+        )
+        _audit(conn, user, "Original FDR marked renewed", "instrument",
+               instrument["replaces_id"],
+               f"Replacement instrument {instrument_id} passed officer verification.")
     _audit(conn, user, "Scrutiny action recorded", "instrument", instrument_id,
            f"{action}: {remark.strip()[:300]}")
     conn.commit()
@@ -1542,21 +1820,7 @@ def maturity_radar(request: Request, urgency: str = ""):
     today = _effective_date(conn)
     _scan_maturities(conn, today)
     conn.commit()
-    scopes = _scope_ids(user)
-    notice_sql = """
-        SELECT n.*,i.fdr_number,ins.name AS institution_name
-        FROM fdr_notifications n JOIN fdr_instruments i ON i.id=n.instrument_id
-        JOIN fdr_institutions ins ON ins.id=i.institution_id
-    """
-    notice_params = []
-    if scopes is not None:
-        if scopes:
-            notice_sql += " WHERE i.institution_id IN (" + ",".join("?" for _ in scopes) + ")"
-            notice_params.extend(scopes)
-        else:
-            notice_sql += " WHERE 0=1"
-    notice_sql += " ORDER BY n.id DESC"
-    notices = conn.execute(notice_sql, notice_params).fetchall()
+    notices = _notification_query(conn, user).fetchall()
     conn.close()
     due = []
     for row in rows:
@@ -1839,20 +2103,7 @@ def report_csv(request: Request, report: str = "registry"):
     user = _require_user(request)
     if not user:
         return RedirectResponse("/login")
-    rows = _visible_instruments(user)
-    if report == "pending":
-        rows = [row for row in rows if row["pending_fields"]]
-    elif report == "overdue":
-        conn = connect()
-        today = _effective_date(conn)
-        conn.close()
-        rows = [row for row in rows if date.fromisoformat(row["maturity_date"]) < today]
-    elif report == "discrepancies":
-        rows = [row for row in rows if row["open_discrepancies"]]
-    elif report == "renewals":
-        rows = [row for row in rows if row["replaces_id"]]
-    elif report != "registry":
-        raise HTTPException(400, "Unknown report.")
+    rows = _report_rows(user, report)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Synthetic demo data", "Generated at", _now()])
@@ -1868,6 +2119,55 @@ def report_csv(request: Request, report: str = "registry"):
     return Response(
         output.getvalue(), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="fdr-{report}.csv"'},
+    )
+
+
+@router.get("/fdr/reports.pdf")
+def report_pdf(request: Request, report: str = "registry"):
+    user = _require_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+
+    rows = _report_rows(user, report)
+    output = io.BytesIO()
+    document = SimpleDocTemplate(
+        output, pagesize=landscape(letter), leftMargin=0.45 * inch,
+        rightMargin=0.45 * inch, topMargin=0.45 * inch, bottomMargin=0.45 * inch,
+    )
+    styles = getSampleStyleSheet()
+    table_data = [["FDR number", "Institution", "Bank", "Amount", "Maturity", "Status"]]
+    table_data.extend([
+        [item["fdr_number"], item["institution_name"], item["bank"],
+         item["amount"], item["maturity_date"], item["lifecycle_status"]]
+        for item in rows
+    ])
+    table = Table(table_data, repeatRows=1, colWidths=[1.25, 2.0, 1.65, 1.15, 1.05, 1.45])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#173b55")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5df")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f8")]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    document.build([
+        Paragraph(f"Synthetic FDR report: {report}", styles["Title"]),
+        Paragraph(f"Generated {_now()}", styles["Normal"]),
+        table,
+    ])
+    return Response(
+        output.getvalue(), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="fdr-{report}.pdf"'},
     )
 
 
@@ -1946,7 +2246,7 @@ def save_settings(request: Request, csrf: str = Form(...),
         current + 1,
         json.dumps({
             "require_document": require_document == "on",
-            "require_verified": require_verified == "on",
+            "require_verified": True,
             "block_discrepancy": block_discrepancy == "on",
         }, sort_keys=True),
         user["username"], _now(),

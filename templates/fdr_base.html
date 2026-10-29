@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}AICTE FDR Guard{% endblock %}</title>
     <link rel="stylesheet" href="/static/fdr.css">
+    <link rel="stylesheet" href="/static/fdr-enhancements.css">
+    <link rel="stylesheet" href="/static/fdr-charts.css">
+    <link rel="stylesheet" href="/static/fdr-brand.css">
+    <script src="/static/chart.umd.min.js" defer></script>
 </head>
 <body>
 <div class="shell">
@@ -23,6 +27,7 @@
             <a class="{{ 'active' if active == 'new' }}" href="/fdr/new">New submission</a>
             {% endif %}
             <a class="{{ 'active' if active == 'maturity' }}" href="/fdr/maturity">Maturity radar</a>
+            <a class="{{ 'active' if active == 'notifications' }}" href="/fdr/notifications">Notifications{% if unread_count %} · {{ unread_count }}{% endif %}</a>
             <a class="{{ 'active' if active == 'renewals' }}" href="/fdr/renewals">Renewal history</a>
             <a class="{{ 'active' if active == 'releases' }}" href="/fdr/releases">Release requests</a>
             <a class="{{ 'active' if active == 'reports' }}" href="/fdr/reports">Reports & analytics</a>
@@ -42,7 +47,7 @@
     <main class="main">
         <header class="topbar">
             <div><span class="eyebrow">AICTE REGULATION BUREAU</span><strong>{% block page_title %}FDR Guard{% endblock %}</strong></div>
-            <div class="profile"><span class="avatar">{{ user.username[:1]|upper }}</span><span>{{ user.username }}<small>{{ user.role }}</small></span></div>
+            <div class="topbar-actions">{% if not public_link %}<a class="notification-bell" href="/fdr/notifications" aria-label="Notifications, {{ unread_count }} unread" title="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>{% if unread_count %}<span>{{ unread_count }}</span>{% endif %}</a>{% endif %}<div class="profile"><span class="avatar">{{ user.username[:1]|upper }}</span><span>{{ user.username }}<small>{{ user.role }}</small></span></div></div>
         </header>
         <div class="demo-banner"><strong>DEMO MODE</strong> Synthetic prototype environment. Bank responses are simulated; no AICTE or bank system is connected.</div>
         <section class="content">
