@@ -155,6 +155,14 @@ def init_fdr_db():
             resolved_at TEXT,
             resolved_by TEXT
         );
+        CREATE TABLE IF NOT EXISTS fdr_scrutiny_remarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instrument_id INTEGER NOT NULL REFERENCES fdr_instruments(id),
+            officer TEXT NOT NULL,
+            remark TEXT NOT NULL,
+            action TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS fdr_release_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             instrument_id INTEGER NOT NULL REFERENCES fdr_instruments(id),
@@ -1228,13 +1236,73 @@ def instrument_detail(request: Request, instrument_id: int, link: str = ""):
         SELECT * FROM fdr_field_history WHERE instrument_id=?
         ORDER BY id DESC LIMIT 50
     """, (instrument_id,)).fetchall()
+    scrutiny_remarks = conn.execute("""
+        SELECT * FROM fdr_scrutiny_remarks WHERE instrument_id=?
+        ORDER BY id DESC LIMIT 20
+    """, (instrument_id,)).fetchall()
     conn.close()
     return _render(request, "fdr_detail.html", user, "registry",
                    instrument=instrument, fields=fields, labels=FIELD_LABELS,
                    documents=documents, replacements=replacements,
                    discrepancies=discrepancies,
                    events=events, requests=requests, field_history=field_history,
+                   scrutiny_remarks=scrutiny_remarks,
                    verification_url=link)
+
+
+@router.post("/fdr/{instrument_id:int}/scrutiny")
+def scrutiny_action(request: Request, instrument_id: int,
+                     csrf: str = Form(...), action: str = Form(...),
+                     remark: str = Form(...)):
+    user = _require_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    _check_csrf(request, csrf)
+    if user["role"] not in ("Regional Officer", "Bureau Admin"):
+        raise HTTPException(403, "Only scrutiny officers can record review actions.")
+    if action not in ("request_documents", "mark_verified"):
+        raise HTTPException(400, "Unsupported scrutiny action.")
+    if not remark.strip() or len(remark.strip()) > 1000:
+        raise HTTPException(400, "A scrutiny remark of 1,000 characters or fewer is required.")
+    conn = connect()
+    instrument = _visible_instrument(conn, instrument_id, user)
+    if not instrument:
+        conn.close()
+        raise HTTPException(404, "FDR not found.")
+    if action == "mark_verified":
+        pending = conn.execute("""
+            SELECT COUNT(*) AS count FROM fdr_field_values
+            WHERE instrument_id=? AND verification_status!='Bank-confirmed'
+        """, (instrument_id,)).fetchone()["count"]
+        open_discrepancy = conn.execute("""
+            SELECT COUNT(*) AS count FROM fdr_discrepancies
+            WHERE instrument_id=? AND status='Open'
+        """, (instrument_id,)).fetchone()["count"]
+        if pending or open_discrepancy:
+            conn.close()
+            raise HTTPException(
+                409,
+                "Every critical field must be bank-confirmed and discrepancies resolved "
+                "before this FDR can be marked verified.",
+            )
+        next_status = "Active"
+    else:
+        next_status = "Under verification"
+    timestamp = _now()
+    conn.execute(
+        "INSERT INTO fdr_scrutiny_remarks(instrument_id,officer,remark,action,created_at) "
+        "VALUES(?,?,?,?,?)",
+        (instrument_id, user["username"], remark.strip(), action, timestamp),
+    )
+    conn.execute(
+        "UPDATE fdr_instruments SET lifecycle_status=? WHERE id=?",
+        (next_status, instrument_id),
+    )
+    _audit(conn, user, "Scrutiny action recorded", "instrument", instrument_id,
+           f"{action}: {remark.strip()[:300]}")
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/fdr/{instrument_id}", status_code=303)
 
 
 @router.post("/fdr/{instrument_id:int}/verify-link", response_class=HTMLResponse)

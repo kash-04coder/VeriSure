@@ -17,6 +17,14 @@
         <form method="post" action="/fdr/{{ instrument.id }}/verify-link" class="inline-form"><input type="hidden" name="csrf" value="{{ csrf_token }}"><label>Request bank confirmation<select name="field_name">{% for field in fields %}<option value="{{ field.field_name }}">{{ labels[field.field_name] }} — {{ field.verification_status }}</option>{% endfor %}</select></label><button class="button primary" type="submit">Generate secure link</button></form>
         {% endif %}
         <details><summary>Verification request history</summary>{% for item in requests %}<p>{{ labels[item.field_name] }} · {{ item.status }} · issued {{ item.created_at }} · expires {{ item.expires_at }}{% if item.consumed_at %} · used {{ item.consumed_at }}{% endif %}</p>{% else %}<p>No bank links issued.</p>{% endfor %}</details>
+        {% if user.role in ['Regional Officer','Bureau Admin'] %}
+        <form method="post" action="/fdr/{{ instrument.id }}/scrutiny" class="scrutiny-form">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label>Scrutiny remark<textarea name="remark" required maxlength="1000"></textarea></label>
+            <button class="button" name="action" value="request_documents" type="submit">Request missing documents</button>
+            <button class="button primary" name="action" value="mark_verified" type="submit">Mark verified</button>
+        </form>
+        {% endif %}
     </section>
     <section class="panel">
         <div class="panel-head"><div><h2>Documents</h2><p>Private file access · SHA-256 recorded</p></div></div>
@@ -24,6 +32,8 @@
         {% if user.role in ['Institution User','Bureau Admin'] %}<form method="post" action="/fdr/{{ instrument.id }}/documents" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf_token }}"><label>Add supporting document<input type="file" name="document" accept=".pdf,.png,.jpg,.jpeg" required></label><button class="button" type="submit">Upload document</button></form>{% endif %}
         <h3>Discrepancy history</h3>
         {% for item in discrepancies %}<div class="notice {% if item.status=='Open' %}error{% else %}success{% endif %}"><strong>{{ labels[item.field_name] }} · {{ item.status }}</strong><p>{{ item.explanation }}</p>{% if item.status=='Open' and user.role in ['Regional Officer','Bureau Admin'] %}<form method="post" action="/fdr/{{ instrument.id }}/discrepancies/{{ item.id }}/resolve"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input name="note" placeholder="Resolution note" required><button class="button small">Resolve after confirmation</button></form>{% endif %}</div>{% else %}<p class="empty">No discrepancies recorded.</p>{% endfor %}
+        <h3>Scrutiny history</h3>
+        {% for item in scrutiny_remarks %}<div class="activity-row"><span class="activity-dot"></span><div><strong>{{ item.action|replace('_',' ')|title }}</strong><p>{{ item.remark }}</p><small>{{ item.officer }} · {{ item.created_at }}</small></div></div>{% else %}<p class="empty">No scrutiny actions recorded.</p>{% endfor %}
         {% if user.role in ['Institution User','Bureau Admin'] and instrument.lifecycle_status not in ['Released','Renewal pending'] %}<form method="post" action="/fdr/releases"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="instrument_id" value="{{ instrument.id }}"><label>Release / refund request reason<textarea name="reason" required></textarea></label><button class="button" type="submit">Start eligibility review</button></form>{% endif %}
     </section>
 </div>
