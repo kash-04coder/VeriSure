@@ -115,6 +115,11 @@ app.include_router(bank_api_router)
 app.include_router(portal_router)
 
 
+@app.get("/health", include_in_schema=False)
+def health():
+    return {"status": "ok"}
+
+
 @app.middleware("http")
 async def vault_gate(request: Request, call_next):
     if request.method == "POST":

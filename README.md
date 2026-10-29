@@ -65,6 +65,42 @@ python -m pytest -q
 
 The FDR schema is additive and initialized on application startup. `FDR_DATABASE_PATH` and `FDR_UPLOAD_DIR` can be set for isolated local environments. Uploaded documents are stored outside the static web root and require an authorized FDR scope to download.
 
+## Deploy on Railway
+
+The repository includes a `Dockerfile` that installs Python dependencies and
+Tesseract OCR. Railway supplies the listening port through `PORT`; the
+container command already uses it. The deployment health endpoint is
+`/health`.
+
+1. Push the repository to GitHub. Do not commit `.env`, `forensic.db`,
+   `uploads/`, `secret.key`, or `report_signing.key`.
+2. In Railway, create a project and choose **Deploy from GitHub repo**.
+3. Select this repository. Railway will detect the root `Dockerfile`.
+4. Add these service variables in Railway's **Variables** tab:
+
+   ```text
+   LEXGUARD_SESSION_SECRET=<at least 32 random characters>
+   LEXGUARD_HTTPS_ONLY=true
+   LEXGUARD_ADMIN_USERNAME=admin
+   LEXGUARD_ADMIN_PASSWORD=<strong unique password>
+   FDR_DATABASE_PATH=forensic.db
+   FDR_UPLOAD_DIR=uploads/fdr
+   ```
+
+5. In service settings, set the healthcheck path to `/health`, deploy the
+   staged changes, and generate a Railway public domain under **Networking**.
+6. After the first deployment, use the Railway shell to run `python seed.py`
+   only if you want the fictional demo accounts and records. Never use demo
+   credentials for real data.
+
+This prototype uses SQLite and local file uploads. Railway's service filesystem
+is ephemeral across redeployments, so a plain deployment is suitable only for
+demonstrations. For persistence, attach a Railway Volume mounted at
+`/app/storage`, then migrate all database and upload paths to that mount before
+using it for real records. Do not run multiple replicas with this SQLite
+configuration. For production, prefer a managed PostgreSQL database and
+object storage for uploaded documents.
+
 ## Known limitations and next steps
 
 - The in-process hourly reminder worker is not durable across downtime; email delivery is not configured.
