@@ -1,11 +1,12 @@
 import sqlite3
+from config import DATABASE_PATH
 from datetime import datetime
 
 def save_verification(
         evidence_id,
         username,
         status):
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
     c.execute("""
     INSERT INTO verification_logs(

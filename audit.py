@@ -1,10 +1,11 @@
 
 import sqlite3
 from datetime import datetime
+from config import DATABASE_PATH
 
 def log_action(username,action):
     conn = sqlite3.connect(
-        "forensic.db",
+        DATABASE_PATH,
         timeout=10
     )
     c = conn.cursor()
@@ -21,7 +22,7 @@ def log_action(username,action):
 
 
 def get_audit_logs():
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
     SELECT
@@ -35,7 +36,7 @@ def get_audit_logs():
     return [dict(row) for row in rows]
 
 def get_audit_users():
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     users = conn.execute("""
     SELECT DISTINCT username
     FROM audit_logs
@@ -43,4 +44,3 @@ def get_audit_users():
     """).fetchall()
     conn.close()
     return [u[0] for u in users]
-

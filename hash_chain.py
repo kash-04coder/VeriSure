@@ -29,9 +29,10 @@ SHA-256 hex digest), same convention as Bitcoin's genesis block.
 
 import hashlib
 import sqlite3
+from config import DATABASE_PATH
 from datetime import datetime
 
-DB = "forensic.db"
+DB = DATABASE_PATH
 GENESIS_HASH = "0" * 64
 
 

@@ -6,8 +6,9 @@ from encryption import encrypt_file
 from audit import log_action
 from ip_logger import log_ip_activity
 from security import validate_upload
+from config import DATABASE_PATH, UPLOAD_PATH
 
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = UPLOAD_PATH
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -29,7 +30,7 @@ def save_evidence(case_id, title, filename, file_bytes, username, ip_address="No
     file_hash = calculate_hash(file_path)
     encrypted_path = encrypt_file(file_path)
     # save to database...
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
     c.execute("""
     INSERT INTO evidence(

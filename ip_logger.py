@@ -1,7 +1,8 @@
 import sqlite3
 from datetime import datetime
+from config import DATABASE_PATH
 
-DB = "forensic.db"
+DB = DATABASE_PATH
 
 def log_ip_activity(evidence_id, username, action, ip):
     conn = sqlite3.connect(DB)

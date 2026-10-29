@@ -26,9 +26,10 @@ from audit import log_action
 from ip_logger import log_ip_activity
 from evidence import calculate_hash
 import hash_chain
+from config import DATABASE_PATH, UPLOAD_PATH
 
-DB = "forensic.db"
-UPLOAD_FOLDER = "uploads"
+DB = DATABASE_PATH
+UPLOAD_FOLDER = UPLOAD_PATH
 
 DOCUMENT_TYPES = [
     "FDR",
