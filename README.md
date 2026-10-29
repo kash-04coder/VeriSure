@@ -4,9 +4,25 @@ AICTE FDR Guard is a local, database-backed prototype for security-deposit and F
 
 > **Prototype notice:** All bank responses are simulated. No AICTE, bank, email or government system is connected. Synthetic data is explicitly labelled. Sample reminder thresholds and release checks are not official policy and must be validated against current AICTE requirements before operational use.
 
-## Windows setup
+## Setup
 
-Use Python 3.11 or newer. From PowerShell in the repository directory:
+Use Python 3.11 or newer. Install Tesseract OCR before starting the application:
+
+- macOS: `brew install tesseract`
+- Ubuntu/Debian: `sudo apt-get install tesseract-ocr`
+- Windows: install the Tesseract OCR distribution and add its install directory to `PATH`.
+
+On macOS or Linux, from the repository directory:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+export LEXGUARD_SESSION_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+python -m uvicorn app:app --reload --port 8000
+```
+
+On Windows PowerShell:
 
 ```powershell
 py -3.11 -m venv .venv
@@ -31,28 +47,47 @@ been removed. Uploads are restricted to validated PDF/PNG/JPEG files up to
 
 ### Synthetic demo accounts
 
-Run this explicit, repeatable initializer from the repository directory:
+Run the repeatable initializer from the repository directory:
 
 ```powershell
-python seed_demo.py --allow-demo-seed
+python seed.py
 ```
 
 It creates fictional records and these local-only accounts:
 
 | Role | Username | Password |
 |---|---|---|
-| Bureau Admin | `demo-admin` | `DemoAdmin!2026` |
-| Institution User | `demo-institution` | `DemoInstitution!2026` |
-| Regional Officer | `demo-officer` | `DemoOfficer!2026` |
+| Institution | `demo-institution` | `DemoInstitution!2026` |
+| Scrutiny Officer | `demo-officer` | `DemoOfficer!2026` |
+| Competent Authority | `demo-authority` | `DemoAuthority!2026` |
+| Bank Verifier | `demo-bank` | `DemoBank!2026` |
+| Admin | `demo-admin` | `DemoAdmin!2026` |
 
-Change or remove these accounts before any shared or deployed use. The bank verifier does not log in: an officer generates a random, single-use, time-limited field-verification URL from an FDR detail page. The response is clearly marked simulated.
+All accounts are fictional and local-only; change or remove them before shared use. Bank field-verification URLs are still single-use and simulated.
+
+### Docker
+
+Build and run with a locally generated session secret:
+
+```sh
+docker build -t lexguard-fdr .
+docker run --rm -p 8000:8000 \
+	-e LEXGUARD_SESSION_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')" \
+	-v lexguard-data:/app/uploads \
+	lexguard-fdr
+```
+
+The image includes Tesseract OCR. Set `FDR_SMTP_HOST`, `FDR_SMTP_PORT`,
+`FDR_SMTP_USERNAME`, `FDR_SMTP_PASSWORD`, `FDR_SMTP_FROM`, and
+`FDR_NOTIFICATION_EMAIL` to enable SMTP delivery. Without SMTP host and
+notification address, alert details are logged to the application console.
 
 ## Main workflows
 
-- **Dashboard and registry:** Database-derived totals, institution-scoped listing, status/search filters, maturity and discrepancy indicators, and scoped CSV exports.
+- **Dashboard and registry:** Lifecycle totals, institution-scoped search across institution/FDR/bank/status, local Chart.js charts, unread alerts, performance metrics, and CSV/PDF reports.
 - **Institution submissions:** PDF/PNG/JPEG validation, private storage, SHA-256 metadata, OCR text extraction using the existing LexGuard OCR module, labelled field-candidate parsing, and human-entered claimed values. OCR confidence is marked unavailable; OCR is never treated as bank confirmation.
 - **Trust layer:** Claimed, OCR-candidate and independently confirmed values are stored separately. Officers can generate single-use tokens whose hashes are stored server-side. Expiry and atomic one-time consumption are enforced, and mismatch responses create discrepancy records.
-- **Maturity radar:** Sample thresholds are configurable. The virtual date offset does not modify the machine clock or FDR dates. Deduplicated in-app reminder creation runs hourly while the app process is alive and when the dashboard or radar is opened.
+- **Maturity radar:** APScheduler scans daily. Configurable 90/60/30/7-day reminders target institution and officer accounts; overdue FDRs alert Officers, and cases more than 15 days overdue escalate to Admin and become Escalated. SMTP is optional; otherwise alerts are logged. The virtual date offset does not modify the machine clock or FDR dates.
 - **Renewal and release:** Replacement instruments can link to their original. Release requests record versioned eligibility evaluations and enforce separate scrutiny, recommendation, approval and release actions. Prototype eligibility rules are intentionally conservative and not official criteria.
 - **Audit:** FDR actions are recorded in a canonical SHA-256 hash chain with a verification view. A local hash chain is tamper-evident, not an independently immutable external ledger.
 - **Access control:** Institution and regional scopes are assignable by a Bureau Admin and checked server-side for FDR detail, documents, lists and exports. Privileged routes enforce roles in the backend. Bank links expose only the one requested field.
@@ -63,7 +98,7 @@ Change or remove these accounts before any shared or deployed use. The bank veri
 python -m pytest -q
 ```
 
-The FDR schema is additive and initialized on application startup. `FDR_DATABASE_PATH` and `FDR_UPLOAD_DIR` can be set for isolated local environments. Uploaded documents are stored outside the static web root and require an authorized FDR scope to download.
+The FDR schema is additive and initialized on application startup. `FDR_DATABASE_PATH` and `FDR_UPLOAD_DIR` can be set for isolated local environments. Uploaded documents are stored outside the static web root and require an authorized FDR scope to download. Chart.js is served from `static/chart.umd.min.js` without a CDN dependency.
 
 ## Deploy on Railway
 
@@ -103,11 +138,10 @@ object storage for uploaded documents.
 
 ## Known limitations and next steps
 
-- The in-process hourly reminder worker is not durable across downtime; email delivery is not configured.
-- The prototype has configurable maturity reminders but not a full institution/officer/admin escalation ladder or a durable job queue.
+- APScheduler jobs run in-process and are not durable across downtime or coordinated across multiple app workers; use a persistent job service for production.
 - The simulated verifier proves the single-use token flow, not a real bank identity or bank integration.
 - OCR depends on Tesseract being installed and available to `pytesseract`. Candidate confidence is unavailable. Extraction errors are shown to the user; manual entry remains available.
-- The prototype does not implement full institution user provisioning, externally immutable audit storage, release-request-specific attachments, or a formal institution/officer/admin escalation ladder.
+- Email delivery uses a configured shared notification address; account-specific addresses and delivery acknowledgements are not modeled.
 - Validate all financial and release rules against the current AICTE Approval Process Handbook before real-world use. Configure TLS, managed secrets, production database and retention controls before deployment.
 
 ## Retained LexGuard features

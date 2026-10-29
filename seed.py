@@ -54,6 +54,10 @@ def seed():
         "INSERT OR IGNORE INTO fdr_user_scopes(username,institution_id) VALUES(?,?)",
         ("demo-institution", legacy_institution),
     )
+    conn.execute(
+        "INSERT OR IGNORE INTO fdr_user_scopes(username,institution_id) VALUES(?,?)",
+        ("demo-officer", legacy_institution),
+    )
     for index, status in enumerate(PORTAL_STATUSES, 1):
         fdr_number = f"VER-DEMO-{index:03d}"
         maturity = date.today() + timedelta(days=(index - 5) * 30)

@@ -12,6 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import fdr_portal as fdr
 import auth
+from routes.portals import router as portals_router
 
 
 SECRET = "test-only-session-secret-that-is-long-enough"
@@ -29,6 +30,9 @@ def portal(tmp_path, monkeypatch):
     conn.execute("INSERT INTO users(username,role) VALUES('institution-user','Institution User')")
     conn.execute("INSERT INTO users(username,role) VALUES('reviewer','Bureau Admin')")
     conn.execute("INSERT INTO users(username,role) VALUES('regional','Regional Officer')")
+    conn.execute("INSERT INTO users(username,role) VALUES('authority','Competent Authority')")
+    conn.execute("INSERT INTO users(username,role) VALUES('system-admin','Admin')")
+    conn.execute("INSERT INTO users(username,role) VALUES('bank-user','Bank Verifier')")
     institution_id = conn.execute(
         "INSERT INTO fdr_institutions(name,region,created_at) VALUES(?,?,?)",
         ("Test Institute", "Test Region", fdr._now()),
@@ -69,6 +73,7 @@ def portal(tmp_path, monkeypatch):
     conn.close()
     app = FastAPI()
     app.include_router(fdr.router)
+    app.include_router(portals_router)
     app.add_middleware(SessionMiddleware, secret_key=SECRET)
     return app, institution_id, instrument_id, database
 
@@ -150,7 +155,7 @@ def test_institution_scope_hides_unassigned_fdrs(portal):
     ))
     conn.commit()
     conn.close()
-    client = TestClient(app)
+    client = TestClient(app, follow_redirects=False)
     _session_cookie(client, "institution-user", "Institution User")
     assert client.get(f"/fdr/{instrument_id}").status_code == 200
     assert client.get(f"/fdr/{instrument_id + 100}").status_code == 404
@@ -368,6 +373,233 @@ def test_ocr_candidates_are_not_given_fabricated_confidence():
         "issue_date": "2026-02-01",
         "maturity_date": "2027-02-01",
     }
+
+
+def test_maturity_reminders_are_scoped_deduplicated_and_escalated(portal):
+    app, _, instrument_id, database = portal
+    conn = fdr.connect()
+    due_in_90_days = date.today() + timedelta(days=90)
+    conn.execute(
+        "UPDATE fdr_instruments SET maturity_date=?,lifecycle_status='Active' WHERE id=?",
+        (due_in_90_days.isoformat(), instrument_id),
+    )
+    fdr._scan_maturities(conn, date.today())
+    fdr._scan_maturities(conn, date.today())
+    status = conn.execute(
+        "SELECT lifecycle_status FROM fdr_instruments WHERE id=?", (instrument_id,)
+    ).fetchone()[0]
+    recipients = conn.execute(
+        "SELECT recipient_username FROM fdr_notifications WHERE instrument_id=?",
+        (instrument_id,),
+    ).fetchall()
+    assert status == "Expiring"
+    assert {row[0] for row in recipients} == {"institution-user", "regional"}
+    assert len(recipients) == 2
+    for threshold in (60, 30, 7):
+        conn.execute(
+            "UPDATE fdr_instruments SET maturity_date=? WHERE id=?",
+            ((date.today() + timedelta(days=threshold)).isoformat(), instrument_id),
+        )
+        fdr._scan_maturities(conn, date.today())
+        event_count = conn.execute(
+            "SELECT COUNT(*) FROM fdr_notifications WHERE instrument_id=? "
+            "AND event_key LIKE ?",
+            (instrument_id, f"%maturity-{threshold}%"),
+        ).fetchone()[0]
+        assert event_count == 2
+
+    conn.execute(
+        "UPDATE fdr_instruments SET maturity_date=? WHERE id=?",
+        ((date.today() - timedelta(days=16)).isoformat(), instrument_id),
+    )
+    fdr._scan_maturities(conn, date.today())
+    escalations = conn.execute(
+        "SELECT recipient_username,recipient_role FROM fdr_notifications "
+        "WHERE instrument_id=? AND event_key LIKE '%maturity-escalated%'",
+        (instrument_id,),
+    ).fetchall()
+    assert conn.execute(
+        "SELECT lifecycle_status FROM fdr_instruments WHERE id=?", (instrument_id,)
+    ).fetchone()[0] == "Escalated"
+    assert {row[0] for row in escalations} == {"authority", "reviewer", "system-admin"}
+    conn.commit()
+    conn.close()
+
+    client = TestClient(app, follow_redirects=False)
+    _session_cookie(client, "institution-user", "Institution User")
+    page = client.get("/fdr/notifications")
+    assert "overdue; officer renewal action is required" not in page.text
+    assert "escalated after more than 15 overdue days" not in page.text
+    assert 'aria-label="Notifications, 4 unread"' in page.text
+    conn = sqlite3.connect(database)
+    notification_id = conn.execute(
+        "SELECT id FROM fdr_notifications WHERE recipient_username='institution-user' "
+        "ORDER BY id LIMIT 1"
+    ).fetchone()[0]
+    conn.close()
+    read = client.post(
+        f"/fdr/notifications/{notification_id}/read",
+        data={"csrf": _csrf(page)},
+    )
+    assert read.status_code == 303
+    assert 'aria-label="Notifications, 3 unread"' in client.get(
+        "/fdr/notifications"
+    ).text
+    officer = TestClient(app)
+    _session_cookie(officer, "regional", "Regional Officer")
+    officer_page = officer.get("/fdr/notifications")
+    assert "overdue; officer renewal action is required" in officer_page.text
+    assert "escalated after more than 15 overdue days" not in officer_page.text
+
+
+def test_replacement_is_assigned_to_officer_and_original_is_retained(portal):
+    app, institution_id, original_id, database = portal
+    conn = sqlite3.connect(database)
+    conn.execute("""
+        UPDATE fdr_field_values SET verification_status='Bank-confirmed',
+            confirmed_value=claimed_value WHERE instrument_id=?
+    """, (original_id,))
+    conn.commit()
+    conn.close()
+
+    institution = TestClient(app, follow_redirects=False)
+    _session_cookie(institution, "institution-user", "Institution User")
+    page = institution.get("/fdr/new")
+    submitted = institution.post("/fdr/new", data={
+        "csrf": _csrf(page), "institution_id": institution_id,
+        "fdr_number": "TEST-RENEWAL-2", "bank": "Test Bank",
+        "branch": "Test Branch", "amount": "1200.00",
+        "issue_date": date.today().isoformat(),
+        "maturity_date": (date.today() + timedelta(days=365)).isoformat(),
+        "holder": "Test Institute", "replaces_id": original_id,
+    })
+    assert submitted.status_code == 303
+    replacement_id = int(submitted.headers["location"].rsplit("/", 1)[1])
+    conn = sqlite3.connect(database)
+    replacement = conn.execute(
+        "SELECT replaces_id,assigned_officer,lifecycle_status FROM fdr_instruments WHERE id=?",
+        (replacement_id,),
+    ).fetchone()
+    notice = conn.execute(
+        "SELECT recipient_username,message FROM fdr_notifications WHERE instrument_id=?",
+        (replacement_id,),
+    ).fetchone()
+    conn.close()
+    assert replacement == (original_id, "regional", "Under verification")
+    assert notice[0] == "regional"
+    assert "TEST-FDR-1" in notice[1]
+    conn = sqlite3.connect(database)
+    conn.execute("""
+        UPDATE fdr_field_values SET verification_status='Bank-confirmed',
+            confirmed_value=claimed_value WHERE instrument_id=?
+    """, (replacement_id,))
+    conn.commit()
+    conn.close()
+
+    officer = TestClient(app, follow_redirects=False)
+    _session_cookie(officer, "regional", "Regional Officer")
+    detail = officer.get(f"/fdr/{replacement_id}")
+    verified = officer.post(f"/fdr/{replacement_id}/scrutiny", data={
+        "csrf": _csrf(detail), "action": "mark_verified", "remark": "Renewal checked",
+    })
+    assert verified.status_code == 303
+    conn = sqlite3.connect(database)
+    states = conn.execute(
+        "SELECT id,lifecycle_status FROM fdr_instruments WHERE id IN (?,?) ORDER BY id",
+        (original_id, replacement_id),
+    ).fetchall()
+    conn.close()
+    assert states == [(original_id, "Renewed"), (replacement_id, "Active")]
+    assert fdr.verify_audit_chain()[0] is True
+
+
+def test_release_verification_cannot_be_disabled_by_settings(portal):
+    _, _, instrument_id, _ = portal
+    conn = fdr.connect()
+    conn.execute("""
+        UPDATE fdr_rule_sets SET rules_json=? WHERE active=1
+    """, (json.dumps({
+        "require_document": False,
+        "require_verified": False,
+        "block_discrepancy": False,
+    }),))
+    eligibility = fdr._eligibility(conn, instrument_id)
+    conn.close()
+    verification_check = next(
+        item for item in eligibility["checks"] if item["name"] == "Required fields confirmed"
+    )
+    assert verification_check["passed"] is False
+    assert eligibility["eligible"] is False
+
+
+def test_bank_mismatch_creates_an_open_discrepancy(portal):
+    app, _, instrument_id, database = portal
+    officer = TestClient(app)
+    _session_cookie(officer, "reviewer", "Bureau Admin")
+    detail = officer.get(f"/fdr/{instrument_id}")
+    generated = officer.post(
+        f"/fdr/{instrument_id}/verify-link",
+        data={"csrf": _csrf(detail), "field_name": "amount"},
+    )
+    match = re.search(r'value="(http://testserver/bank/verify/[^\"]+)"', generated.text)
+    assert match
+    path = match.group(1).replace("http://testserver", "")
+    bank = TestClient(app)
+    page = bank.get(path)
+    response = bank.post(path, data={
+        "csrf": _csrf(page), "response": "confirm",
+        "confirmed_value": "1200.00", "remark": "Synthetic mismatch",
+    })
+    assert response.status_code == 200
+    conn = sqlite3.connect(database)
+    status = conn.execute(
+        "SELECT verification_status FROM fdr_field_values "
+        "WHERE instrument_id=? AND field_name='amount'", (instrument_id,),
+    ).fetchone()[0]
+    discrepancy = conn.execute(
+        "SELECT status FROM fdr_discrepancies WHERE instrument_id=? AND field_name='amount'",
+        (instrument_id,),
+    ).fetchone()[0]
+    conn.close()
+    assert status == "Mismatch"
+    assert discrepancy == "Open"
+
+
+def test_csv_and_pdf_exports_cover_scoped_report_filters(portal):
+    app, _, _, _ = portal
+    client = TestClient(app)
+    _session_cookie(client, "institution-user", "Institution User")
+    upcoming = client.get("/fdr/reports.csv?report=upcoming_30")
+    missing_documents = client.get("/fdr/reports.csv?report=missing_documents")
+    pdf = client.get("/fdr/reports.pdf?report=registry")
+    assert upcoming.status_code == 200
+    assert "TEST-FDR-1" in upcoming.text
+    assert "TEST-FDR-1" in missing_documents.text
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF-")
+
+
+def test_users_can_open_only_their_assigned_role_portal(portal):
+    app, _, _, _ = portal
+    allowed = {
+        "institution-user": ("Institution User", "/institution"),
+        "regional": ("Regional Officer", "/officer"),
+        "authority": ("Competent Authority", "/authority"),
+        "system-admin": ("Admin", "/admin"),
+        "bank-user": ("Bank Verifier", "/bank"),
+    }
+    portal_paths = ("/institution", "/officer", "/authority", "/admin", "/bank")
+    for username, (role, own_portal) in allowed.items():
+        client = TestClient(app)
+        _session_cookie(client, username, role)
+        for path in portal_paths:
+            expected = 200 if path == own_portal else 403
+            response = client.get(path)
+            assert response.status_code == expected, (role, path)
+            if role == "Institution User" and path == "/institution":
+                assert 'action="/logout"' in response.text
+                assert ">Log out</button>" in response.text
 
 
 def test_claim_correction_requires_bank_match_before_discrepancy_resolution(portal):

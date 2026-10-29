@@ -13,7 +13,6 @@ Run with:
 """
 
 import csv
-import asyncio
 import hmac
 import io
 import logging
@@ -29,6 +28,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse, Response, FileResp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import HTTPS_ONLY, SESSION_SECRET
 from config import DATABASE_PATH
@@ -85,26 +85,23 @@ ROLE_RESTRICTED = {
 
 VAULT_EXEMPT_PATHS = {"/login", "/logout", "/vault/setup", "/vault/unlock"}
 
-async def _deadline_worker():
-    while True:
-        try:
-            await asyncio.to_thread(scan_deadlines)
-        except Exception:
-            logging.getLogger(__name__).exception("Scheduled FDR deadline scan failed.")
-        await asyncio.sleep(60 * 60)
-
-
 @asynccontextmanager
 async def lifespan(_app):
-    task = asyncio.create_task(_deadline_worker())
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        scan_deadlines,
+        trigger="cron",
+        hour=0,
+        minute=5,
+        id="fdr-deadline-scan",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.start()
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="Verisure · AICTE Security Deposit / FDR Portal", lifespan=lifespan)
