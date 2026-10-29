@@ -9,6 +9,7 @@
 {% if user %}
 <div class="sidebar">
     <h2 style="color:white;font-size:18px;margin-bottom:20px;">🔐 LexGuard</h2>
+    <a href="/fdr/dashboard">AICTE FDR Guard</a>
     <a href="/dashboard" class="{{ 'active' if active=='dashboard' }}">Dashboard</a>
     <a href="/documents" class="{{ 'active' if active=='documents' }}">Documents</a>
     <a href="/ledger" class="{{ 'active' if active=='ledger' }}">Integrity Ledger</a>
@@ -32,7 +33,10 @@
     <form method="post" action="/vault/lock" style="margin-top:10px;">
         <button type="submit" style="background:#334155;width:100%;height:38px;">Lock Vault</button>
     </form>
-    <a href="/logout" style="margin-top:10px;color:#fca5a5;">Logout ({{ user.username }})</a>
+    <form method="post" action="/logout" style="margin-top:10px;">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button type="submit" style="background:#334155;width:100%;height:38px;">Logout ({{ user.username }})</button>
+    </form>
 </div>
 <div class="main-content">
 {% endif %}

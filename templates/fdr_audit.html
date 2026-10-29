@@ -1,0 +1,8 @@
+{% extends "fdr_base.html" %}
+{% block title %}Audit trail · AICTE FDR Guard{% endblock %}
+{% block page_title %}Audit trail{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">TAMPER-EVIDENT APPLICATION HISTORY</p><h1>Audit integrity</h1><p>Hash chaining detects changes to this application's recorded event sequence. It is not an independently immutable ledger.</p></div><span class="badge {{ 'good' if valid else 'danger' }}">{{ 'CHAIN VALID' if valid else 'CHAIN INVALID' }}</span></div>
+<div class="kpi-grid two-kpi"><div class="kpi"><span>Events checked</span><strong>{{ count }}</strong></div><div class="kpi"><span>First invalid block</span><strong>{{ broken_at or '—' }}</strong></div></div>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Actor / role</th><th>Action</th><th>Entity</th><th>Summary</th><th>Hash</th></tr></thead><tbody>{% for item in events %}<tr><td>{{ item.timestamp }}</td><td>{{ item.actor }}<small>{{ item.actor_role }}</small></td><td>{{ item.action }}</td><td>{{ item.entity_type }} {{ item.entity_id }}</td><td>{{ item.summary }}</td><td><code>{{ item.event_hash[:18] }}…</code></td></tr>{% else %}<tr><td colspan="6" class="empty">No audit events recorded.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

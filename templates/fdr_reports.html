@@ -1,0 +1,8 @@
+{% extends "fdr_base.html" %}
+{% block title %}Reports & analytics · AICTE FDR Guard{% endblock %}
+{% block page_title %}Reports & analytics{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">DATABASE-DERIVED · ACCESS-SCOPED EXPORTS</p><h1>Reports & analytics</h1><p>CSV exports include generation time and synthetic demo-data labels.</p></div></div>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Report</th><th>Records</th><th>Output</th></tr></thead><tbody>{% for item in reports %}<tr><td><strong>{{ item.label }}</strong></td><td>{{ item.count }}</td><td><a class="button small" href="/fdr/reports.csv?report={{ item.key }}">Download CSV</a></td></tr>{% endfor %}</tbody></table></div></section>
+<p class="footnote">Exports apply the same institution scope as the underlying registry. PDF exports and institution-specific reports are not included in this prototype.</p>
+{% endblock %}

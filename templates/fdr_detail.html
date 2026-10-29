@@ -1,0 +1,32 @@
+{% extends "fdr_base.html" %}
+{% block title %}{{ instrument.fdr_number }} · AICTE FDR Guard{% endblock %}
+{% block page_title %}Instrument details{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">{{ instrument.institution_name }} · {{ instrument.region }}</p><h1>{{ instrument.fdr_number }}</h1><p>{{ instrument.bank }} · {{ instrument.branch }} · ₹ {{ instrument.amount }}</p></div><span class="status large">{{ instrument.lifecycle_status }}</span></div>
+{% if instrument.replaces_fdr_number %}<div class="notice info">Replacement for <a href="/fdr/{{ instrument.replaces_id }}">{{ instrument.replaces_fdr_number }}</a></div>{% endif %}
+{% if replacements %}<section class="panel"><div class="panel-head"><div><h2>Renewal & replacement history</h2><p>Original instrument preserved; linked replacements remain traceable.</p></div></div>{% for item in replacements %}<div class="document-row"><a href="/fdr/{{ item.id }}">{{ item.fdr_number }}</a><small>{{ item.lifecycle_status }} · Matures {{ item.maturity_date }}</small></div>{% endfor %}</section>{% endif %}
+{% if verification_url %}<div class="notice success"><strong>One-time simulated bank link</strong><p>Share securely; this link expires in 24 hours and is shown only once here.</p><input readonly value="{{ verification_url }}" onclick="this.select()"></div>{% endif %}
+<div class="two-col">
+    <section class="panel">
+        <div class="panel-head"><div><h2>Claimed versus bank-confirmed</h2><p>OCR is a candidate source only, never bank confirmation.</p></div></div>
+        <div class="comparison">
+        {% for field in fields %}<div class="compare-row"><div><strong>{{ labels[field.field_name] }}</strong><small>Institution-claimed</small><span>{{ field.claimed_value }}</span></div><div><strong>Bank-confirmed</strong><small>{{ field.verification_source or 'Pending independent response' }}</small><span>{{ field.confirmed_value or '—' }}</span></div><div><span class="badge {% if field.verification_status == 'Bank-confirmed' %}good{% elif field.verification_status == 'Mismatch' %}danger{% else %}warning{% endif %}">{{ field.verification_status }}</span>{% if field.extracted_value %}<small>OCR candidate · {{ field.extracted_value }}<br>Confidence unavailable</small>{% endif %}{% if user.role in ['Institution User','Bureau Admin'] %}<form method="post" action="/fdr/{{ instrument.id }}/fields/{{ field.field_name }}/claim"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input name="claimed_value" value="{{ field.claimed_value }}" required><button class="button small">Save claimed value</button></form>{% endif %}</div></div>{% endfor %}
+        <details><summary>Field value history</summary>{% for item in field_history %}<p>{{ labels[item.field_name] }} · {{ item.action }} by {{ item.actor }} · {{ item.created_at }} · {{ item.verification_status }}</p>{% endfor %}</details>
+        </div>
+        {% if user.role in ['Bureau Admin','Regional Officer'] %}
+        <form method="post" action="/fdr/{{ instrument.id }}/verify-link" class="inline-form"><input type="hidden" name="csrf" value="{{ csrf_token }}"><label>Request bank confirmation<select name="field_name">{% for field in fields %}<option value="{{ field.field_name }}">{{ labels[field.field_name] }} — {{ field.verification_status }}</option>{% endfor %}</select></label><button class="button primary" type="submit">Generate secure link</button></form>
+        {% endif %}
+        <details><summary>Verification request history</summary>{% for item in requests %}<p>{{ labels[item.field_name] }} · {{ item.status }} · issued {{ item.created_at }} · expires {{ item.expires_at }}{% if item.consumed_at %} · used {{ item.consumed_at }}{% endif %}</p>{% else %}<p>No bank links issued.</p>{% endfor %}</details>
+    </section>
+    <section class="panel">
+        <div class="panel-head"><div><h2>Documents</h2><p>Private file access · SHA-256 recorded</p></div></div>
+        {% for doc in documents %}<div class="document-row"><a href="/fdr/files/{{ doc.id }}">{{ doc.original_name }}</a><small>{{ doc.created_at }} · <code>{{ doc.sha256[:16] }}…</code></small></div>{% else %}<p class="empty">No supporting document attached.</p>{% endfor %}
+        {% if user.role in ['Institution User','Bureau Admin'] %}<form method="post" action="/fdr/{{ instrument.id }}/documents" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf_token }}"><label>Add supporting document<input type="file" name="document" accept=".pdf,.png,.jpg,.jpeg" required></label><button class="button" type="submit">Upload document</button></form>{% endif %}
+        <h3>Discrepancy history</h3>
+        {% for item in discrepancies %}<div class="notice {% if item.status=='Open' %}error{% else %}success{% endif %}"><strong>{{ labels[item.field_name] }} · {{ item.status }}</strong><p>{{ item.explanation }}</p>{% if item.status=='Open' and user.role in ['Regional Officer','Bureau Admin'] %}<form method="post" action="/fdr/{{ instrument.id }}/discrepancies/{{ item.id }}/resolve"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input name="note" placeholder="Resolution note" required><button class="button small">Resolve after confirmation</button></form>{% endif %}</div>{% else %}<p class="empty">No discrepancies recorded.</p>{% endfor %}
+        {% if user.role in ['Institution User','Bureau Admin'] and instrument.lifecycle_status not in ['Released','Renewal pending'] %}<form method="post" action="/fdr/releases"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="instrument_id" value="{{ instrument.id }}"><label>Release / refund request reason<textarea name="reason" required></textarea></label><button class="button" type="submit">Start eligibility review</button></form>{% endif %}
+    </section>
+</div>
+<section class="panel"><div class="panel-head"><div><h2>Action timeline</h2><p>Application audit chain · not an external immutable ledger</p></div></div>
+{% for event in events %}<div class="activity-row"><span class="activity-dot"></span><div><strong>{{ event.action }}</strong><p>{{ event.summary }}</p><small>{{ event.actor }} · {{ event.actor_role }} · {{ event.timestamp }}</small></div></div>{% else %}<p class="empty">No instrument events.</p>{% endfor %}</section>
+{% endblock %}

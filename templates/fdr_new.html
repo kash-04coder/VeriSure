@@ -1,0 +1,39 @@
+{% extends "fdr_base.html" %}
+{% block title %}New FDR submission · AICTE FDR Guard{% endblock %}
+{% block page_title %}New FDR submission{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">INSTITUTION WORKFLOW · STEP 1 OF 1</p><h1>Submit an instrument</h1><p>Enter institution-claimed values. Every field remains subject to independent review.</p></div></div>
+{% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+<div class="two-col form-layout">
+    <section class="panel">
+        <div class="panel-head"><div><h2>Supporting FDR document</h2><p>PDF or PNG/JPEG · Maximum 10 MB</p></div></div>
+        <form method="post" action="/fdr/intake" enctype="multipart/form-data">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label for="document">Upload receipt</label><input id="document" type="file" name="document" accept=".pdf,.png,.jpg,.jpeg" required>
+            <button class="button" type="submit">Upload and extract text</button>
+        </form>
+        {% if extraction %}
+        <div class="extraction"><strong>OCR extraction: {{ extraction.status|title }}</strong><p>Candidate confidence: unavailable. Candidates are not verified and require human review.</p>
+        {% if extraction.message %}<p class="danger-text">{{ extraction.message }}</p>{% endif %}
+        {% if extraction.candidates %}<ul>{% for key,value in extraction.candidates.items() %}<li>{{ labels[key] if labels is defined else key|replace('_',' ')|title }}: <strong>{{ value }}</strong></li>{% endfor %}</ul>{% else %}<p>No labelled field candidates were detected. Enter values manually.</p>{% endif %}
+        </div>{% endif %}
+    </section>
+    <section class="panel">
+        <div class="panel-head"><div><h2>Claimed instrument details</h2><p>Required values are stored separately from bank responses.</p></div></div>
+        <form method="post" action="/fdr/new" class="form-grid">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="upload_id" value="{{ upload_id }}">
+            <label class="span-2">Institution<select name="institution_id" required><option value="">Select institution</option>{% for institution in institutions %}<option value="{{ institution.id }}">{{ institution.name }} — {{ institution.region }}</option>{% endfor %}</select></label>
+            <label>FDR number<input name="fdr_number" value="{{ extraction.get('candidates', {}).get('fdr_number','') }}" required></label>
+            <label>Issuing bank<input name="bank" value="{{ extraction.get('candidates', {}).get('bank','') }}" required></label>
+            <label>Bank branch<input name="branch" value="{{ extraction.get('candidates', {}).get('branch','') }}" required></label>
+            <label>Deposit amount (INR)<input name="amount" type="number" step="0.01" min="0.01" value="{{ extraction.get('candidates', {}).get('amount','') }}" required></label>
+            <label>Issue date<input name="issue_date" type="date" value="{{ extraction.get('candidates', {}).get('issue_date','') }}" required></label>
+            <label>Maturity date<input name="maturity_date" type="date" value="{{ extraction.get('candidates', {}).get('maturity_date','') }}" required></label>
+            <label class="span-2">Holder / beneficiary<input name="holder" value="{{ extraction.get('candidates', {}).get('holder','') }}" required></label>
+            <label class="span-2">Replacement of (optional)<select name="replaces_id"><option value="0">New instrument</option>{% for item in replaces %}<option value="{{ item.id }}">{{ item.fdr_number }}</option>{% endfor %}</select></label>
+            <button class="button primary span-2" type="submit">Submit claimed values</button>
+        </form>
+        <p class="helper">An upload is optional for prototype evaluation, but release eligibility can require supporting documentation. No official financial thresholds are applied.</p>
+    </section>
+</div>
+{% endblock %}

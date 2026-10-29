@@ -1,0 +1,10 @@
+{% extends "fdr_base.html" %}
+{% block title %}Verification center · AICTE FDR Guard{% endblock %}
+{% block page_title %}Verification center{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">CLAIMED VALUES · INDEPENDENT BANK RESPONSE</p><h1>Verification center</h1><p>OCR candidates are not shown as bank confirmation; compare each field's recorded source.</p></div></div>
+<form class="filterbar" method="get"><select name="status"><option value="">All unresolved fields</option>{% for s in ['Pending bank verification','Mismatch','Clarification requested'] %}<option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><button class="button">Filter</button></form>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Instrument</th><th>Institution</th><th>Bank</th><th>Field</th><th>Institution claim</th><th>Bank-confirmed</th><th>Status</th><th></th></tr></thead><tbody>
+{% for item in records %}<tr><td>{{ item.fdr_number }}</td><td>{{ item.institution_name }}</td><td>{{ item.bank }}</td><td>{{ labels[item.field_name] }}</td><td>{{ item.claimed_value }}</td><td>{{ item.confirmed_value or '—' }}</td><td><span class="badge {% if item.verification_status=='Mismatch' %}danger{% else %}warning{% endif %}">{{ item.verification_status }}</span></td><td><a href="/fdr/{{ item.instrument_id }}">Review →</a></td></tr>{% else %}<tr><td colspan="8" class="empty">No fields match this view in your authorized scope.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

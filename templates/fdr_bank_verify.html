@@ -1,0 +1,17 @@
+{% extends "fdr_base.html" %}
+{% block title %}Bank field verification · AICTE FDR Guard{% endblock %}
+{% block page_title %}Secure field verification{% endblock %}
+{% block content %}
+<div class="narrow">
+{% if submitted %}<div class="notice success"><h2>Response recorded</h2><p>This simulated verification token has been consumed and cannot be reused.</p></div>
+{% elif expired or not verification %}<div class="notice error"><h2>Link unavailable</h2><p>This link is invalid, expired or has already been used.</p></div>
+{% else %}<div class="page-heading"><div><p class="eyebrow">SIMULATED BANK VERIFIER · SINGLE FIELD ACCESS</p><h1>Confirm instrument detail</h1><p>FDR {{ verification.fdr_number }} · {{ verification.bank }}</p></div></div>
+<section class="panel"><div class="claim-box"><small>Institution-claimed value · {{ verification.field_name|replace('_',' ')|title }}</small><strong>{{ verification.claimed_value }}</strong></div>
+<form method="post" action="/bank/verify/{{ token }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
+<label>Response<select name="response"><option value="confirm">Confirm a value</option><option value="dispute">Dispute the claimed value</option><option value="clarification">Request clarification</option></select></label>
+<label>Confirmed value<input name="confirmed_value" placeholder="Required when confirming"></label>
+<label>Remark<textarea name="remark" rows="4" maxlength="1000"></textarea></label>
+<button class="button primary" type="submit">Submit response once</button></form>
+<p class="helper">Prototype simulation only. This response is not a real bank confirmation.</p></section>{% endif %}
+</div>
+{% endblock %}

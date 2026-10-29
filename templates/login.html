@@ -1,19 +1,29 @@
-{% extends "base.html" %}
-{% block title %}Login - LexGuard{% endblock %}
-{% block content %}
-<div class="container" style="max-width:420px;margin-top:80px;">
-    <div class="header-box">
-        <h1>🔐 LexGuard</h1>
-        <p>Secure Digital Document Management for Legal & Investigation Records</p>
-    </div>
-    <div class="card">
-        <form method="post" action="/login">
-            <label>Username</label>
-            <input type="text" name="username" required>
-            <label>Password</label>
-            <input type="password" name="password" required>
-            <button type="submit" style="width:100%;">Login</button>
-        </form>
-    </div>
-</div>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in · AICTE FDR Guard</title>
+    <link rel="stylesheet" href="/static/fdr.css">
+</head>
+<body class="auth-screen">
+<main class="auth-card">
+    <a class="brand auth-brand" href="/"><span class="brand-mark">FG</span><span><strong>AICTE FDR Guard</strong><small>Security deposit & FDR management</small></span></a>
+    <p class="eyebrow">AICTE REGULATION BUREAU</p>
+    <h1>Sign in to your workspace</h1>
+    <p class="auth-copy">Access is based on your assigned role and institution scope.</p>
+    {% for message in messages %}
+    <div class="notice {{ 'error' if message.type == 'error' else 'success' }}">{{ message.text }}</div>
+    {% endfor %}
+    <form method="post" action="/login">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <label for="username">Username</label>
+        <input id="username" type="text" name="username" autocomplete="username" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required>
+        <button class="button primary auth-submit" type="submit">Sign in</button>
+    </form>
+    <div class="auth-notice"><strong>Prototype environment</strong><p>Synthetic records and simulated bank verification only. Demo credentials are documented in the local setup instructions.</p></div>
+</main>
+</body>
+</html>

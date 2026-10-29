@@ -1,0 +1,11 @@
+{% extends "fdr_base.html" %}
+{% block title %}Maturity radar · AICTE FDR Guard{% endblock %}
+{% block page_title %}Maturity radar{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">DEADLINE MONITOR · DEMO DATE {{ today }}</p><h1>Maturity radar</h1><p>Reminder records are generated when this page or the dashboard is opened. Thresholds are prototype settings, not official requirements.</p></div></div>
+<form class="filterbar" method="get"><select name="urgency"><option value="">All maturities</option><option value="30" {% if urgency=='30' %}selected{% endif %}>Within 30 days</option><option value="overdue" {% if urgency=='overdue' %}selected{% endif %}>Overdue</option></select><button class="button">Filter</button><a class="button quiet" href="/fdr/reports.csv?report=overdue">Export overdue CSV</a></form>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>FDR</th><th>Institution</th><th>Amount</th><th>Maturity</th><th>Days remaining</th><th>Verification</th><th>Lifecycle</th></tr></thead><tbody>
+{% for item in instruments %}<tr><td><a href="/fdr/{{ item.id }}">{{ item.fdr_number }}</a></td><td>{{ item.institution_name }}</td><td>₹ {{ item.amount }}</td><td>{{ item.maturity_date }}</td><td>{% if item.days_remaining is not none and item.days_remaining < 0 %}<span class="badge danger">{{ -item.days_remaining }} days overdue</span>{% elif item.days_remaining is not none %}<span class="badge {% if item.days_remaining <= 30 %}warning{% else %}good{% endif %}">{{ item.days_remaining }} days</span>{% else %}Invalid date{% endif %}</td><td>{{ item.pending_fields }} pending fields</td><td>{{ item.lifecycle_status }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No instruments meet this filter.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><div class="panel-head"><div><h2>Generated alerts</h2><p>Duplicate reminder event keys are suppressed.</p></div></div>{% for item in notifications %}<div class="activity-row"><span class="activity-dot"></span><div><strong>{{ item.fdr_number }} · {{ item.institution_name }}</strong><p>{{ item.message }}</p><small>Due {{ item.due_date }} · {{ item.created_at }}</small></div></div>{% else %}<p class="empty">No alerts generated.</p>{% endfor %}</section>
+{% endblock %}

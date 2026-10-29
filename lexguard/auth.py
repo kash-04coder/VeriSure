@@ -72,7 +72,14 @@ def create_default_admin():
     conn.close()
 
 
+def create_default_admin():
+    """Compatibility shim: default privileged accounts are no longer created."""
+    return None
+
+
 def login(username, password):
+    if username == "admin" and password == "admin123":
+        return None
     conn = sqlite3.connect("forensic.db")
     c = conn.cursor()
     c.execute(

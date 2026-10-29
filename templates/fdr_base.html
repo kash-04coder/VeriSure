@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}AICTE FDR Guard{% endblock %}</title>
+    <link rel="stylesheet" href="/static/fdr.css">
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" href="/fdr/dashboard">
+            <span class="brand-mark">FG</span>
+            <span><strong>AICTE FDR Guard</strong><small>Security deposit portal</small></span>
+        </a>
+        {% if not public_link %}
+        <div class="side-label">WORKSPACE</div>
+        <nav>
+            <a class="{{ 'active' if active == 'dashboard' }}" href="/fdr/dashboard">Overview</a>
+            <a class="{{ 'active' if active == 'registry' }}" href="/fdr/registry">FDR Registry</a>
+            <a class="{{ 'active' if active == 'verification' }}" href="/fdr/verification">Verification center</a>
+            {% if user.role in ['Institution User', 'Bureau Admin'] %}
+            <a class="{{ 'active' if active == 'new' }}" href="/fdr/new">New submission</a>
+            {% endif %}
+            <a class="{{ 'active' if active == 'maturity' }}" href="/fdr/maturity">Maturity radar</a>
+            <a class="{{ 'active' if active == 'renewals' }}" href="/fdr/renewals">Renewal history</a>
+            <a class="{{ 'active' if active == 'releases' }}" href="/fdr/releases">Release requests</a>
+            <a class="{{ 'active' if active == 'reports' }}" href="/fdr/reports">Reports & analytics</a>
+            {% if user.role == 'Bureau Admin' %}
+            <div class="side-label">ADMINISTRATION</div>
+            <a class="{{ 'active' if active == 'institutions' }}" href="/fdr/institutions">Institutions</a>
+            <a class="{{ 'active' if active == 'audit' }}" href="/fdr/audit">Audit trail</a>
+            <a class="{{ 'active' if active == 'settings' }}" href="/fdr/settings">Prototype settings</a>
+            {% endif %}
+        </nav>
+        <div class="sidebar-bottom">
+            <span class="demo-pill">SIMULATED PROTOTYPE</span>
+            <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="logout-button" type="submit">Sign out <span>{{ user.username }}</span></button></form>
+        </div>
+        {% endif %}
+    </aside>
+    <main class="main">
+        <header class="topbar">
+            <div><span class="eyebrow">AICTE REGULATION BUREAU</span><strong>{% block page_title %}FDR Guard{% endblock %}</strong></div>
+            <div class="profile"><span class="avatar">{{ user.username[:1]|upper }}</span><span>{{ user.username }}<small>{{ user.role }}</small></span></div>
+        </header>
+        <div class="demo-banner"><strong>DEMO MODE</strong> Synthetic prototype environment. Bank responses are simulated; no AICTE or bank system is connected.</div>
+        <section class="content">
+            {% block content %}{% endblock %}
+        </section>
+    </main>
+</div>
+</body>
+</html>

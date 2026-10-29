@@ -58,21 +58,13 @@ def _verify_password(password, stored):
 
 
 def create_default_admin():
-    conn = sqlite3.connect("forensic.db")
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username='admin'")
-    user = c.fetchone()
-    if not user:
-        password = _hash_password("admin123")
-        c.execute(
-            "INSERT INTO users(username,password,role) VALUES(?,?,?)",
-            ("admin", password, "Admin")
-        )
-        conn.commit()
-    conn.close()
+    """Compatibility shim: default privileged accounts are no longer created."""
+    return None
 
 
 def login(username, password):
+    if username == "admin" and password == "admin123":
+        return None
     conn = sqlite3.connect("forensic.db")
     c = conn.cursor()
     c.execute(

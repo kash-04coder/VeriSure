@@ -13,29 +13,32 @@ Run with:
 """
 
 import csv
+import asyncio
+import hmac
 import io
+import logging
 import os
 import secrets
 import tempfile
 import hashlib as _hashlib
+from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, Request, Form, UploadFile, File, Depends
-from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, Response, FileResponse
+from fastapi import FastAPI, Request, Form, UploadFile, File
+from fastapi.responses import RedirectResponse, HTMLResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from database import init_db, init_document_tables
-from auth import create_default_admin, login as auth_login, get_users, delete_user, update_role, create_user
-from dashboard import get_dashboard_data
+from auth import login as auth_login, get_users, delete_user, update_role, create_user
 from audit import get_audit_logs, log_action
 from case_manager import (
-    create_case, get_cases, get_case, get_case_evidence, get_case_alerts,
+    create_case, get_cases, get_case, get_case_evidence,
     close_case, delete_case, update_case, get_case_statistics, build_case_summary,
 )
 from case_report import generate_case_report
-from evidence import save_evidence, calculate_hash
+from evidence import save_evidence
 from evidence_details import get_evidence_details
 from timeline import get_timeline
 from verification import save_verification
@@ -48,10 +51,18 @@ from ip_logger import log_ip_activity
 import sqlite3
 import documents
 import hash_chain
+from fdr_portal import init_fdr_db, router as fdr_router, scan_deadlines
+
+SESSION_SECRET = os.environ.get("LEXGUARD_SESSION_SECRET", "")
+if len(SESSION_SECRET) < 32:
+    raise RuntimeError(
+        "Set LEXGUARD_SESSION_SECRET to a random value of at least 32 characters. "
+        "See .env.example and README.md."
+    )
 
 init_db()
 init_document_tables()
-create_default_admin()
+init_fdr_db()
 
 DB = "forensic.db"
 
@@ -67,10 +78,33 @@ ROLE_RESTRICTED = {
 
 VAULT_EXEMPT_PATHS = {"/login", "/register", "/logout", "/vault/setup", "/vault/unlock"}
 
-app = FastAPI(title="LexGuard")
+async def _deadline_worker():
+    while True:
+        try:
+            await asyncio.to_thread(scan_deadlines)
+        except Exception:
+            logging.getLogger(__name__).exception("Scheduled FDR deadline scan failed.")
+        await asyncio.sleep(60 * 60)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    task = asyncio.create_task(_deadline_worker())
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="LexGuard", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+app.include_router(fdr_router)
 
 
 @app.middleware("http")
@@ -83,7 +117,8 @@ async def vault_gate(request: Request, call_next):
     design, so nothing regresses.
     """
     path = request.url.path
-    if path.startswith("/static") or path in VAULT_EXEMPT_PATHS:
+    if (path.startswith("/static") or path.startswith("/fdr") or path == "/dashboard"
+            or path.startswith("/bank/verify") or path in VAULT_EXEMPT_PATHS):
         return await call_next(request)
 
     user = request.session.get("user")
@@ -96,20 +131,35 @@ async def vault_gate(request: Request, call_next):
     return await call_next(request)
 
 
-# SECRET generated fresh each run for the hackathon build; for anything
-# beyond a demo, load this from an environment variable instead so
-# sessions survive a restart and the key isn't regenerated on deploy.
-#
-# Registered AFTER vault_gate: Starlette runs the *last*-added middleware
-# first on the way in, so SessionMiddleware needs to be added last in
-# code for it to actually run before vault_gate touches request.session.
-app.add_middleware(SessionMiddleware, secret_key=secrets.token_hex(32))
+# Registered AFTER vault_gate so it runs first and initializes request.session.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    max_age=12 * 60 * 60,
+    same_site="lax",
+    https_only=os.environ.get("LEXGUARD_HTTPS_ONLY", "").lower() == "true",
+)
 
 
 # ---------- Auth helpers ----------
 
 def get_user(request: Request):
     return request.session.get("user")
+
+
+def csrf_token(request: Request):
+    token = request.session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        request.session["_csrf_token"] = token
+    return token
+
+
+def check_csrf(request: Request, submitted):
+    expected = request.session.get("_csrf_token", "")
+    if not expected or not hmac.compare_digest(expected, submitted or ""):
+        return False
+    return True
 
 
 def require_login(request: Request):
@@ -124,6 +174,7 @@ def render(request, template_name, active=None, messages=None, **context):
         "user": get_user(request),
         "active": active,
         "messages": messages or [],
+        "csrf_token": csrf_token(request),
         **context,
     })
 
@@ -144,26 +195,31 @@ def forbidden(request):
 
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
-    return RedirectResponse("/dashboard" if get_user(request) else "/login")
+    return RedirectResponse("/fdr/dashboard" if get_user(request) else "/login")
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     if get_user(request):
-        return RedirectResponse("/dashboard")
+        return RedirectResponse("/fdr/dashboard")
     return render(request, "login.html")
 
 
 @app.post("/login")
-def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+def login_submit(request: Request, username: str = Form(...), password: str = Form(...),
+                 csrf: str = Form(...)):
+    if not check_csrf(request, csrf):
+        return HTMLResponse("Invalid or missing CSRF token.", status_code=403)
     role = auth_login(username, password)
     if not role:
         return render(request, "login.html", messages=[
             {"type": "error", "text": "Invalid username or password."}
         ])
+    request.session.clear()
     request.session["user"] = {"username": username, "role": role}
+    request.session["_csrf_token"] = secrets.token_urlsafe(32)
     log_action(username, "Logged in")
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/fdr/dashboard", status_code=303)
 
 
 @app.get("/register", response_class=HTMLResponse)
@@ -261,8 +317,10 @@ def vault_view(request: Request):
     return render(request, "vault.html", active="vault", files=files)
 
 
-@app.get("/logout")
-def logout(request: Request):
+@app.post("/logout")
+def logout(request: Request, csrf: str = Form(...)):
+    if not check_csrf(request, csrf):
+        return HTMLResponse("Invalid or missing CSRF token.", status_code=403)
     user = get_user(request)
     if user:
         log_action(user["username"], "Logged out")
@@ -274,21 +332,7 @@ def logout(request: Request):
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
-    user = require_login(request)
-    if not user:
-        return RedirectResponse("/login")
-
-    data, uploads, roles, activity = get_dashboard_data()
-    all_docs = documents.get_documents()
-    recent_ledger = hash_chain.get_global_ledger(limit=8)
-
-    return render(
-        request, "dashboard.html", active="dashboard",
-        data=data, activity=activity,
-        doc_count=len(all_docs),
-        chain_block_count=len(hash_chain.get_global_ledger(limit=100000)),
-        recent_ledger=recent_ledger,
-    )
+    return RedirectResponse("/fdr/dashboard" if get_user(request) else "/login")
 
 
 # ---------- Documents ----------

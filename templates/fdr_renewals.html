@@ -1,0 +1,9 @@
+{% extends "fdr_base.html" %}
+{% block title %}Renewals · AICTE FDR Guard{% endblock %}
+{% block page_title %}Renewal & replacement history{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">LINKED INSTRUMENT HISTORY</p><h1>Renewal & replacement</h1><p>Original instruments remain unchanged; each replacement is a linked record.</p></div>{% if user.role in ['Institution User','Bureau Admin'] %}<a class="button primary" href="/fdr/new">Submit replacement</a>{% endif %}</div>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Instrument</th><th>Relationship</th><th>Institution</th><th>Maturity</th><th>Lifecycle</th></tr></thead><tbody>
+{% for item in instruments %}<tr><td><a href="/fdr/{{ item.id }}">{{ item.fdr_number }}</a></td><td>{{ item.relationship }}</td><td>{{ item.institution_name }}</td><td>{{ item.maturity_date }}</td><td><span class="status">{{ item.lifecycle_status }}</span></td></tr>{% else %}<tr><td colspan="5" class="empty">No renewal or replacement links in your scope.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

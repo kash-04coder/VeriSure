@@ -1,0 +1,41 @@
+{% extends "fdr_base.html" %}
+{% block title %}Overview · AICTE FDR Guard{% endblock %}
+{% block page_title %}Overview dashboard{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">COMMAND VIEW · {{ today }}</p><h1>Security deposit overview</h1><p>Monitor instrument validity, independent verification and actions due.</p></div><a class="button primary" href="/fdr/registry">Open registry</a></div>
+<div class="kpi-grid">
+    <a class="kpi" href="/fdr/registry"><span>Total instruments</span><strong>{{ kpis.total }}</strong><small>Across your authorized scope</small></a>
+    <div class="kpi"><span>Recorded deposit value</span><strong class="value-small">₹ {{ kpis.value }}</strong><small>Values submitted by institutions</small></div>
+    <a class="kpi" href="/fdr/registry?status=Active"><span>Active instruments</span><strong>{{ kpis.active }}</strong><small>Lifecycle status: active</small></a>
+    <a class="kpi alert" href="/fdr/maturity?urgency=30"><span>Expiring in 30 days</span><strong>{{ kpis.expiring }}</strong><small>Prioritize renewal review</small></a>
+    <a class="kpi" href="/fdr/registry?status=Under%20verification"><span>Pending verification</span><strong>{{ kpis.pending }}</strong><small>At least one field awaits a bank</small></a>
+    <a class="kpi alert" href="/fdr/registry?status=Discrepancy%20unresolved"><span>Open discrepancies</span><strong>{{ kpis.discrepancies }}</strong><small>Requires scrutiny</small></a>
+    <a class="kpi" href="/fdr/releases"><span>Release requests</span><strong>{{ kpis.releases }}</strong><small>Awaiting an authorized action</small></a>
+    <a class="kpi alert" href="/fdr/maturity?urgency=overdue"><span>Overdue instruments</span><strong>{{ kpis.overdue }}</strong><small>Maturity does not imply release</small></a>
+    <a class="kpi" href="/fdr/registry?status=Matured"><span>Matured instruments</span><strong>{{ kpis.matured }}</strong><small>Awaiting an explicit next action</small></a>
+    <a class="kpi" href="/fdr/registry?status=Renewal%20pending"><span>Renewals pending</span><strong>{{ kpis.renewals }}</strong><small>Originals remain in the record</small></a>
+</div>
+<div class="two-col chart-row">
+    <section class="panel"><div class="panel-head"><div><h2>Lifecycle distribution</h2><p>Calculated from visible FDR records</p></div></div>
+    {% for item in status_chart %}<a class="bar-row" href="/fdr/registry?status={{ item.label|urlencode }}"><span>{{ item.label }}</span><div class="bar-track"><i style="width:{{ item.percent }}%"></i></div><strong>{{ item.count }}</strong></a>{% else %}<p class="empty">No records to chart.</p>{% endfor %}
+    </section>
+    <section class="panel"><div class="panel-head"><div><h2>Maturity trend</h2><p>Upcoming maturity dates by month</p></div></div>
+    {% for item in maturity_chart %}<div class="bar-row"><span>{{ item.month }}</span><div class="bar-track"><i style="width:{{ item.percent }}%"></i></div><strong>{{ item.count }}</strong></div>{% else %}<p class="empty">No maturity data to chart.</p>{% endfor %}
+    </section>
+</div>
+<div class="two-col">
+    <section class="panel">
+        <div class="panel-head"><div><h2>FDRs requiring attention</h2><p>Prioritized by maturity date</p></div><a href="/fdr/registry">View all →</a></div>
+        <div class="table-wrap"><table><thead><tr><th>Instrument</th><th>Institution</th><th>Bank</th><th>Maturity</th><th>Status</th></tr></thead><tbody>
+        {% for item in instruments %}<tr><td><a href="/fdr/{{ item.id }}"><strong>{{ item.fdr_number }}</strong></a><small>{{ item.amount }}</small></td><td>{{ item.institution_name }}</td><td>{{ item.bank }}</td><td>{{ item.maturity_date }}</td><td><span class="status">{{ item.lifecycle_status }}</span></td></tr>
+        {% else %}<tr><td colspan="5" class="empty">No FDR records in your scope yet. Submit or seed synthetic demo data to begin.</td></tr>{% endfor %}
+        </tbody></table></div>
+    </section>
+    <section class="panel">
+        <div class="panel-head"><div><h2>Deadline alerts</h2><p>Prototype reminder engine</p></div><a href="/fdr/maturity">Open radar →</a></div>
+        {% for notice in notifications %}<div class="activity-row"><span class="activity-dot"></span><div><strong>{{ notice.fdr_number }}</strong><p>{{ notice.message }}</p><small>{{ notice.due_date }}</small></div></div>
+        {% else %}<div class="empty">No configured deadline threshold is due today.</div>{% endfor %}
+    </section>
+</div>
+<div class="footnote">Recorded values are institution claims until independently confirmed. OCR candidates never constitute bank confirmation.</div>
+{% endblock %}

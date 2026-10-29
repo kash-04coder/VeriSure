@@ -1,0 +1,13 @@
+{% extends "fdr_base.html" %}
+{% block title %}FDR Registry · AICTE FDR Guard{% endblock %}
+{% block page_title %}FDR Registry{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">INSTRUMENTS · REGISTERED CLAIMS</p><h1>FDR Registry</h1><p>Compare submitted details with independent verification status.</p></div>{% if user.role in ['Institution User','Bureau Admin'] %}<a class="button primary" href="/fdr/new">+ New submission</a>{% endif %}</div>
+<form class="filterbar" method="get" action="/fdr/registry"><input name="q" value="{{ q }}" placeholder="Search FDR, bank or institution"><select name="status"><option value="">All lifecycle statuses</option>{% for s in ['Active','Under verification','Discrepancy unresolved','Renewal pending','Matured','Released'] %}<option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><button class="button" type="submit">Apply filters</button><a class="button quiet" href="/fdr/reports.csv">Export CSV</a></form>
+<section class="panel">
+    <div class="table-wrap"><table><thead><tr><th>FDR number</th><th>Institution / region</th><th>Bank</th><th>Deposit amount</th><th>Maturity</th><th>Verification</th><th>Lifecycle</th><th></th></tr></thead><tbody>
+    {% for item in instruments %}<tr><td><a href="/fdr/{{ item.id }}"><strong>{{ item.fdr_number }}</strong></a>{% if item.duplicate_flag %}<small class="danger-text">Duplicate reference</small>{% endif %}</td><td>{{ item.institution_name }}<small>{{ item.region }}</small></td><td>{{ item.bank }}<small>{{ item.branch }}</small></td><td>₹ {{ item.amount }}</td><td>{{ item.maturity_date }}</td><td>{% if item.open_discrepancies %}<span class="badge danger">Discrepancy</span>{% elif item.pending_fields %}<span class="badge warning">{{ item.pending_fields }} pending fields</span>{% else %}<span class="badge good">Reviewed</span>{% endif %}</td><td><span class="status">{{ item.lifecycle_status }}</span></td><td><a href="/fdr/{{ item.id }}">Details →</a></td></tr>
+    {% else %}<tr><td colspan="8" class="empty">No records match these filters.</td></tr>{% endfor %}
+    </tbody></table></div>
+</section>
+{% endblock %}

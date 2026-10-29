@@ -12,7 +12,7 @@ Run with:
     uvicorn app:app --reload --port 8000
 """
 
-import secrets
+import os
 
 from fastapi import FastAPI, Request, Form, UploadFile, File, Depends
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -36,10 +36,16 @@ create_default_admin()
 
 app = FastAPI(title="LexGuard")
 
-# SECRET generated fresh each run for the hackathon build; for anything
-# beyond a demo, load this from an environment variable instead so
-# sessions survive a restart and the key isn't regenerated on deploy.
-app.add_middleware(SessionMiddleware, secret_key=secrets.token_hex(32))
+session_secret = os.environ.get("LEXGUARD_SESSION_SECRET", "")
+if len(session_secret) < 32:
+    raise RuntimeError("Set LEXGUARD_SESSION_SECRET to a random value of at least 32 characters.")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=session_secret,
+    max_age=12 * 60 * 60,
+    same_site="lax",
+    https_only=os.environ.get("LEXGUARD_HTTPS_ONLY", "").lower() == "true",
+)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
