@@ -31,15 +31,11 @@ DB = "forensic.db"
 UPLOAD_FOLDER = "uploads"
 
 DOCUMENT_TYPES = [
-    "FIR",
-    "Police Report",
-    "Witness Statement",
-    "Charge Sheet",
-    "Court Filing",
-    "Evidence Record",
-    "Forensic Report",
-    "Legal Notice",
-    "Judgment",
+    "FDR",
+    "Deposit Receipt",
+    "Bank Letter",
+    "Renewal Letter",
+    "Release Request",
     "Other",
 ]
 

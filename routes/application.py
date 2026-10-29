@@ -56,6 +56,7 @@ from fdr_portal import init_fdr_db, router as fdr_router, scan_deadlines
 from security import validate_upload
 from routes.dependencies import ROLE_GROUPS, portal_for_role
 from routes.portals import router as portal_router
+from portal_schema import init_portal_schema
 
 if len(SESSION_SECRET) < 32:
     raise RuntimeError(
@@ -66,6 +67,7 @@ if len(SESSION_SECRET) < 32:
 init_db()
 init_document_tables()
 init_fdr_db()
+init_portal_schema()
 
 DB = "forensic.db"
 
