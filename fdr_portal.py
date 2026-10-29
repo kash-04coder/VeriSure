@@ -20,11 +20,12 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from security import MAX_UPLOAD_BYTES, validate_upload
+from config import DATABASE_PATH, UPLOAD_PATH
 
 
-DB = os.environ.get("FDR_DATABASE_PATH", "forensic.db")
-USER_DB = "forensic.db"
-UPLOAD_ROOT = Path(os.environ.get("FDR_UPLOAD_DIR", "uploads/fdr")).resolve()
+DB = DATABASE_PATH
+USER_DB = DATABASE_PATH
+UPLOAD_ROOT = Path(UPLOAD_PATH).resolve()
 REQUIRED_FIELDS = (
     "fdr_number", "bank", "branch", "amount", "issue_date",
     "maturity_date", "holder",

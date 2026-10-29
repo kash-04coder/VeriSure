@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from config import HTTPS_ONLY, SESSION_SECRET
+from config import DATABASE_PATH
 from database import init_db, init_document_tables
 from auth import login as auth_login, get_users, delete_user, update_role, create_user
 from audit import get_audit_logs, log_action
@@ -70,7 +71,7 @@ init_document_tables()
 init_fdr_db()
 init_portal_schema()
 
-DB = "forensic.db"
+DB = DATABASE_PATH
 
 # Role permissions, matching the original app's ROUTES table.
 ROLE_RESTRICTED = {
@@ -239,7 +240,7 @@ def root(request: Request):
         return RedirectResponse("/fdr/dashboard")
     import sqlite3
 
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DB)
     instrument_count = conn.execute(
         "SELECT COUNT(*) FROM fdr_instruments"
     ).fetchone()[0]

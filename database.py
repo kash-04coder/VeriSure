@@ -1,8 +1,9 @@
 import sqlite3
+from config import DATABASE_PATH
 
 def init_db():
     conn = sqlite3.connect(
-        "forensic.db",
+        DATABASE_PATH,
         timeout=10
     )
     c = conn.cursor()
@@ -121,7 +122,7 @@ def init_document_tables():
     original evidence/case schema above is untouched -- this is purely
     additive.
     """
-    conn = sqlite3.connect("forensic.db", timeout=10)
+    conn = sqlite3.connect(DATABASE_PATH, timeout=10)
     c = conn.cursor()
 
     # A "document" is the logical legal record (an FIR, a charge sheet, a

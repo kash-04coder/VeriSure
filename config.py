@@ -1,6 +1,7 @@
 """Environment-backed application configuration."""
 
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -20,6 +21,19 @@ def _load_dotenv(path=".env"):
 
 _load_dotenv()
 
+IS_VERCEL = bool(os.environ.get("VERCEL"))
+configured_database = os.environ.get("FDR_DATABASE_PATH")
+configured_uploads = os.environ.get("FDR_UPLOAD_DIR")
+DATABASE_PATH = (
+   str(Path(tempfile.gettempdir()) / "verisure-forensic.db")
+   if IS_VERCEL and configured_database in (None, "", "forensic.db")
+   else (configured_database or "forensic.db")
+)
+UPLOAD_PATH = (
+   str(Path(tempfile.gettempdir()) / "verisure-uploads" / "fdr")
+   if IS_VERCEL and configured_uploads in (None, "", "uploads/fdr")
+   else (configured_uploads or "uploads/fdr")
+)
 SESSION_SECRET = os.environ.get("LEXGUARD_SESSION_SECRET", "")
 HTTPS_ONLY = os.environ.get("LEXGUARD_HTTPS_ONLY", "").lower() == "true"
 ADMIN_USERNAME = os.environ.get("LEXGUARD_ADMIN_USERNAME", "admin")

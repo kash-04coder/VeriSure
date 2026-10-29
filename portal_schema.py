@@ -1,6 +1,7 @@
 """Additive schema for the Verisure SIH 2026 portal."""
 
 import sqlite3
+from config import DATABASE_PATH
 
 
 PORTAL_STATUSES = (
@@ -10,7 +11,7 @@ PORTAL_STATUSES = (
 )
 
 
-def init_portal_schema(database="forensic.db"):
+def init_portal_schema(database=DATABASE_PATH):
     conn = sqlite3.connect(database, timeout=15)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS institutions (

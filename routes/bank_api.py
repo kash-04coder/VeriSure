@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, Form
 from fastapi.responses import JSONResponse
 
 from routes.dependencies import require_role
+from config import DATABASE_PATH
 
 
 router = APIRouter(prefix="/api/bank", tags=["bank"])
-DATABASE = "forensic.db"
+DATABASE = DATABASE_PATH
 
 
 @router.post("/verify")

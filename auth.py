@@ -20,7 +20,7 @@ import hmac
 import secrets
 import time
 
-from config import ADMIN_PASSWORD, ADMIN_USERNAME
+from config import ADMIN_PASSWORD, ADMIN_USERNAME, DATABASE_PATH
 
 
 MAX_LOGIN_ATTEMPTS = 5
@@ -69,7 +69,7 @@ def create_default_admin():
     """Optionally bootstrap one administrator from environment configuration."""
     if not ADMIN_PASSWORD:
         return None
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     existing = conn.execute(
         "SELECT 1 FROM users WHERE username=?", (ADMIN_USERNAME,)
     ).fetchone()
@@ -88,7 +88,7 @@ def login(username, password):
         return None
     if failure:
         _LOGIN_FAILURES.pop(username, None)
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
     c.execute(
         "SELECT password,role FROM users WHERE username=?",
@@ -113,7 +113,7 @@ def login(username, password):
 
 
 def create_user(username, password, role):
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
     hashed_password = _hash_password(password)
     try:
@@ -141,7 +141,7 @@ def create_user(username, password, role):
 
 
 def get_users():
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     users = conn.execute("""
         SELECT id, username, role
         FROM users
@@ -152,7 +152,7 @@ def get_users():
 
 
 def delete_user(user_id):
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     conn.execute(
         "DELETE FROM users WHERE id=?",
         (user_id,)
@@ -162,7 +162,7 @@ def delete_user(user_id):
 
 
 def update_role(user_id, role):
-    conn = sqlite3.connect("forensic.db")
+    conn = sqlite3.connect(DATABASE_PATH)
     conn.execute(
         "UPDATE users SET role=? WHERE id=?",
         (role, user_id)
