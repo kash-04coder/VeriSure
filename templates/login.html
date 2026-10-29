@@ -3,15 +3,16 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sign in · AICTE FDR Guard</title>
-    <link rel="stylesheet" href="/static/fdr.css">
+    <title>Sign in · Verisure</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="auth-screen">
-<main class="auth-card">
-    <a class="brand auth-brand" href="/"><span class="brand-mark">FG</span><span><strong>AICTE FDR Guard</strong><small>Security deposit & FDR management</small></span></a>
-    <p class="eyebrow">AICTE REGULATION BUREAU</p>
+<body>
+<main class="container" style="max-width:520px;margin:55px auto;">
+    <a class="brand-lockup" href="/" aria-label="Verisure home"><img src="/static/verisure-logo.png" alt="Verisure logo"><span><strong>Verisure</strong><small>Verification + Assurance</small></span></a>
+    <div class="header-box" style="margin-top:24px;">
+    <p class="eyebrow">AICTE REGULATION WORKSPACE</p>
     <h1>Sign in to your workspace</h1>
-    <p class="auth-copy">Access is based on your assigned role and institution scope.</p>
+    <p>Access is based on your assigned role and institution scope.</p>
     {% for message in messages %}
     <div class="notice {{ 'error' if message.type == 'error' else 'success' }}">{{ message.text }}</div>
     {% endfor %}
@@ -23,7 +24,8 @@
         <input id="password" type="password" name="password" autocomplete="current-password" required>
         <button class="button primary auth-submit" type="submit">Sign in</button>
     </form>
-    <div class="auth-notice"><strong>Prototype environment</strong><p>Synthetic records and simulated bank verification only. Demo credentials are documented in the local setup instructions.</p></div>
+    <div class="info"><strong>Prototype built for SIH 2026</strong><p>Synthetic records and simulated bank verification only.</p></div>
+    </div>
 </main>
 </body>
 </html>

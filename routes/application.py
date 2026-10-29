@@ -206,7 +206,31 @@ def forbidden(request):
 
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
-    return RedirectResponse("/fdr/dashboard" if get_user(request) else "/login")
+    if get_user(request):
+        return RedirectResponse("/fdr/dashboard")
+    import sqlite3
+
+    conn = sqlite3.connect("forensic.db")
+    instrument_count = conn.execute(
+        "SELECT COUNT(*) FROM fdr_instruments"
+    ).fetchone()[0]
+    institution_count = conn.execute(
+        "SELECT COUNT(*) FROM fdr_institutions"
+    ).fetchone()[0]
+    verified_count = conn.execute(
+        "SELECT COUNT(*) FROM fdr_instruments WHERE lifecycle_status IN "
+        "('Active', 'Verified')"
+    ).fetchone()[0]
+    conn.close()
+    return render(
+        request,
+        "landing.html",
+        stats={
+            "instruments": instrument_count,
+            "institutions": institution_count,
+            "verified": verified_count,
+        },
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)

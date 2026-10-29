@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Verisure · AICTE Security Deposit / FDR Management Portal{% endblock %}
+{% block content %}
+<div class="public-site">
+    <div class="public-topline">
+        <span>Prototype built for SIH 2026</span>
+        <span>AICTE Security Deposit / FDR Management Portal</span>
+    </div>
+    <header class="public-header">
+        <a class="brand-lockup" href="/" aria-label="Verisure home">
+            <img src="/static/verisure-logo.png" alt="Verisure logo">
+            <span><strong>Verisure</strong><small>Verification + Assurance</small></span>
+        </a>
+        <div class="header-tools" aria-label="Accessibility controls">
+            <button type="button" class="text-size" data-size="small">A-</button>
+            <button type="button" class="text-size active" data-size="normal">A</button>
+            <button type="button" class="text-size" data-size="large">A+</button>
+            <button type="button" id="contrast-toggle">High contrast</button>
+            <a class="button primary" href="/login">Login</a>
+        </div>
+    </header>
+    <nav class="public-nav" aria-label="Primary navigation">
+        <a href="#about">About the portal</a>
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#contact">Help & contact</a>
+    </nav>
+    <main id="main-content">
+        <div class="breadcrumbs"><a href="/">Home</a><span>/</span><strong>Portal overview</strong></div>
+        <section class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">AICTE REGULATION WORKFLOW · SIH 2026</p>
+                <h1>One trusted view of every security deposit and FDR.</h1>
+                <p class="hero-lead">Verisure brings submission, verification, maturity monitoring, renewal, release and audit history into one accountable digital portal.</p>
+                <div class="hero-actions">
+                    <a class="button primary large" href="/login">Login to the portal</a>
+                    <a class="button outline large" href="#how-it-works">See how it works</a>
+                </div>
+                <p class="prototype-note"><strong>Prototype built for SIH 2026.</strong> Demo records and bank responses are synthetic.</p>
+            </div>
+            <div class="hero-panel" aria-label="Portal trust model">
+                <div class="shield-mark">✓</div>
+                <h2>Traceable by design</h2>
+                <p>Separate institution claims, OCR candidates and independent confirmation before any decision is made.</p>
+                <div class="trust-row"><span>Claimed</span><span>Extracted</span><span>Confirmed</span></div>
+            </div>
+        </section>
+        <section id="about" class="section-block">
+            <div class="section-heading"><p class="eyebrow">THE PROBLEM WE SOLVE</p><h2>From fragmented records to accountable action.</h2><p>Manual spreadsheets, email trails and disconnected documents make it difficult to identify what is valid, what needs attention and who approved the next step.</p></div>
+            <div class="solution-grid">
+                <article><span class="card-number">01</span><h3>Centralize</h3><p>Keep institution-wise FDR records, supporting documents and lifecycle status in one controlled repository.</p></article>
+                <article><span class="card-number">02</span><h3>Verify</h3><p>Show exactly what the institution submitted and what an authorized source independently confirmed.</p></article>
+                <article><span class="card-number">03</span><h3>Act on time</h3><p>Monitor maturity, renewal, discrepancy and release actions with clear ownership and audit history.</p></article>
+            </div>
+        </section>
+        <section id="features" class="section-block tinted">
+            <div class="section-heading"><p class="eyebrow">CORE CAPABILITIES</p><h2>Everything officials need in one workspace.</h2></div>
+            <div class="feature-grid">
+                <article><span class="feature-icon">▣</span><h3>FDR repository</h3><p>Searchable institution and instrument records with lifecycle status.</p></article>
+                <article><span class="feature-icon">✓</span><h3>Verification center</h3><p>Field-level claimed, OCR and bank-confirmed value comparison.</p></article>
+                <article><span class="feature-icon">◷</span><h3>Maturity radar</h3><p>Advance reminders for expiring, matured and overdue instruments.</p></article>
+                <article><span class="feature-icon">↻</span><h3>Renewal history</h3><p>Link replacement FDRs to originals without overwriting history.</p></article>
+                <article><span class="feature-icon">⇢</span><h3>Release workflow</h3><p>Separate request, scrutiny, recommendation, approval and release.</p></article>
+                <article><span class="feature-icon">▤</span><h3>Reports & analytics</h3><p>Dashboards and scope-filtered reports for pending action.</p></article>
+                <article><span class="feature-icon">⌁</span><h3>Audit trail</h3><p>Hash-linked events preserve who did what and when.</p></article>
+                <article><span class="feature-icon">◇</span><h3>Secure documents</h3><p>Private uploads, SHA-256 integrity records and document history.</p></article>
+                <article><span class="feature-icon">◎</span><h3>Role-based access</h3><p>Institution, officer and administrator scopes protect sensitive records.</p></article>
+                <article><span class="feature-icon">▥</span><h3>Forensic workspace</h3><p>Evidence, metadata, chain of custody and signed reports remain available.</p></article>
+            </div>
+        </section>
+        <section id="how-it-works" class="section-block">
+            <div class="section-heading"><p class="eyebrow">HOW IT WORKS</p><h2>A complete FDR lifecycle in five steps.</h2></div>
+            <div class="steps">
+                <div><b>1</b><h3>Submit FDR</h3><p>Institution uploads the receipt and enters claimed values.</p></div>
+                <div><b>2</b><h3>Verify</h3><p>Officer reviews the record and obtains authorized confirmation.</p></div>
+                <div><b>3</b><h3>Track</h3><p>Dashboard and alerts surface pending, discrepant and urgent records.</p></div>
+                <div><b>4</b><h3>Renew</h3><p>Replacement instruments stay linked to their original history.</p></div>
+                <div><b>5</b><h3>Release</h3><p>Only an approved, verified request reaches the release stage.</p></div>
+            </div>
+        </section>
+        <section class="stats-strip" aria-label="Portal statistics">
+            <div><strong>{{ stats.institutions }}</strong><span>Institutions in demo scope</span></div>
+            <div><strong>{{ stats.instruments }}</strong><span>FDR instruments tracked</span></div>
+            <div><strong>{{ stats.verified }}</strong><span>Verified or active records</span></div>
+            <div><strong>24/7</strong><span>Lifecycle visibility</span></div>
+        </section>
+        <section id="contact" class="closing-callout">
+            <div><p class="eyebrow">READY TO REVIEW YOUR WORKSPACE?</p><h2>Make every deposit decision traceable.</h2></div>
+            <a class="button primary large" href="/login">Login to Verisure</a>
+        </section>
+    </main>
+    <footer class="public-footer">
+        <div><strong>Verisure</strong><p>AICTE Security Deposit / FDR Management Portal</p><small>Prototype built for SIH 2026 · Not an official AICTE website</small></div>
+        <div class="footer-links"><a href="#contact">Help</a><a href="#contact">Contact</a><a href="#contact">Privacy Policy</a><a href="#contact">Terms</a><span>Last updated: October 2026</span></div>
+    </footer>
+</div>
+{% endblock %}

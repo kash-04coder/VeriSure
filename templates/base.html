@@ -1,14 +1,18 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>{% block title %}LexGuard{% endblock %}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Verisure AICTE Security Deposit and FDR Management Portal">
+<title>{% block title %}Verisure{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 {% if user %}
-<div class="sidebar">
-    <h2 style="color:white;font-size:18px;margin-bottom:20px;">🔐 LexGuard</h2>
+<div class="app-shell">
+<aside class="sidebar" aria-label="Application navigation">
+    <a class="sidebar-brand" href="/fdr/dashboard"><img src="/static/verisure-logo.png" alt="Verisure"><span>Verisure<small>FDR Management Portal</small></span></a>
     <a href="/fdr/dashboard">AICTE FDR Guard</a>
     <a href="/dashboard" class="{{ 'active' if active=='dashboard' }}">Dashboard</a>
     <a href="/documents" class="{{ 'active' if active=='documents' }}">Documents</a>
@@ -24,31 +28,28 @@
     <a href="/evidence/verify" class="{{ 'active' if active=='evidence_verify' }}">Verify Evidence</a>
     <a href="/vault" class="{{ 'active' if active=='vault' }}">Secure Vault</a>
     {% endif %}
-    {% if user.role in ['Admin', 'Investigator', 'Analyst'] %}
-    <a href="/reports/verify-signature" class="{{ 'active' if active=='reports_verify' }}">Verify Report Signature</a>
-    {% endif %}
-    {% if user.role == 'Admin' %}
-    <a href="/users" class="{{ 'active' if active=='users' }}">User Management</a>
-    {% endif %}
-    <form method="post" action="/vault/lock" style="margin-top:10px;"><input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <button type="submit" style="background:#334155;width:100%;height:38px;">Lock Vault</button>
-    </form>
-    <form method="post" action="/logout" style="margin-top:10px;">
-        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <button type="submit" style="background:#334155;width:100%;height:38px;">Logout ({{ user.username }})</button>
-    </form>
-</div>
+    {% if user.role in ['Admin', 'Investigator', 'Analyst'] %}<a href="/reports/verify-signature" class="{{ 'active' if active=='reports_verify' }}">Verify Report Signature</a>{% endif %}
+    {% if user.role == 'Admin' %}<a href="/users" class="{{ 'active' if active=='users' }}">User Management</a>{% endif %}
+    <div class="sidebar-actions">
+        <form method="post" action="/vault/lock"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button type="submit">Lock Vault</button></form>
+        <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button type="submit">Logout ({{ user.username }})</button></form>
+    </div>
+</aside>
 <div class="main-content">
 {% endif %}
-
-{% for message in messages %}
-<div class="{{ message.type }}">{{ message.text }}</div>
-{% endfor %}
-
+{% for message in messages %}<div class="{{ message.type }}" role="alert">{{ message.text }}</div>{% endfor %}
 {% block content %}{% endblock %}
-
-{% if user %}
-</div>
-{% endif %}
+{% if user %}</div></div>{% endif %}
+<script>
+document.querySelectorAll(".text-size").forEach(function (button) {
+    button.addEventListener("click", function () {
+        document.documentElement.dataset.textSize = button.dataset.size;
+        document.querySelectorAll(".text-size").forEach(function (item) { item.classList.remove("active"); });
+        button.classList.add("active");
+    });
+});
+var contrast = document.getElementById("contrast-toggle");
+if (contrast) contrast.addEventListener("click", function () { document.body.classList.toggle("high-contrast"); });
+</script>
 </body>
 </html>
