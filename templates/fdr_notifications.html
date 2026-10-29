@@ -1,0 +1,10 @@
+{% extends "fdr_base.html" %}
+{% block title %}Notifications · AICTE FDR Guard{% endblock %}
+{% block page_title %}Notifications{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">MATURITY · RENEWAL · ESCALATION</p><h1>Notifications</h1><p>Alerts assigned to your account and authorized institution scope.</p></div></div>
+<section class="panel"><div class="notification-list">
+{% for item in notifications %}<article class="notification-item {{ 'unread' if not item.read_at }}"><div><a href="/fdr/{{ item.instrument_id }}"><strong>{{ item.fdr_number }}</strong></a><span class="status">{{ item.recipient_role or 'Legacy alert' }}</span><p>{{ item.message }}</p><small>{{ item.created_at }} · maturity {{ item.due_date }} · {{ item.institution_name }}</small></div>{% if not item.read_at %}<form method="post" action="/fdr/notifications/{{ item.id }}/read"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="button small" type="submit">Mark read</button></form>{% else %}<small>Read {{ item.read_at }}</small>{% endif %}</article>
+{% else %}<p class="empty">No notifications in your account scope.</p>{% endfor %}
+</div></section>
+{% endblock %}
