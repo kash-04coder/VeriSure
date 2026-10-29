@@ -54,6 +54,8 @@ import documents
 import hash_chain
 from fdr_portal import init_fdr_db, router as fdr_router, scan_deadlines
 from security import validate_upload
+from routes.dependencies import ROLE_GROUPS, portal_for_role
+from routes.portals import router as portal_router
 
 if len(SESSION_SECRET) < 32:
     raise RuntimeError(
@@ -101,11 +103,12 @@ async def lifespan(_app):
             pass
 
 
-app = FastAPI(title="LexGuard", lifespan=lifespan)
+app = FastAPI(title="Verisure · AICTE Security Deposit / FDR Portal", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 app.include_router(fdr_router)
+app.include_router(portal_router)
 
 
 @app.middleware("http")
@@ -128,8 +131,25 @@ async def vault_gate(request: Request, call_next):
     design, so nothing regresses.
     """
     path = request.url.path
-    if (path.startswith("/static") or path.startswith("/fdr") or path == "/dashboard"
-            or path.startswith("/bank/verify") or path in VAULT_EXEMPT_PATHS):
+    if (path.startswith("/static") or path.startswith("/fdr") or path in {
+        "/", "/dashboard", "/login", "/logout", "/vault/setup", "/vault/unlock",
+        "/institution", "/officer", "/authority", "/admin", "/bank",
+    } or path.startswith("/bank/verify")):
+        user = request.session.get("user")
+        portal_roles = {
+            "/institution": "Institution",
+            "/officer": "Scrutiny Officer",
+            "/authority": "Competent Authority",
+            "/admin": "Admin",
+            "/bank": "Bank Verifier",
+        }
+        required = portal_roles.get(path)
+        if required and user:
+            stored_role = user.get("role", "")
+            if stored_role not in ROLE_GROUPS.get(required, set()):
+                return HTMLResponse(
+                    "You are not authorised for this portal.", status_code=403
+                )
         return await call_next(request)
 
     user = request.session.get("user")
@@ -242,19 +262,26 @@ def login_page(request: Request):
 
 @app.post("/login")
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...),
+                 selected_role: str = Form(...),
                  csrf: str = Form(...)):
     if not check_csrf(request, csrf):
         return HTMLResponse("Invalid or missing CSRF token.", status_code=403)
     role = auth_login(username, password)
-    if not role:
+    expected_roles = ROLE_GROUPS.get(selected_role)
+    if not role or not expected_roles or role not in expected_roles:
+        if role:
+            log_action(username, f"Unauthorized portal role selected: {selected_role}")
         return render(request, "login.html", messages=[
-            {"type": "error", "text": "Invalid username or password."}
+            {"type": "error", "text": (
+                "You are not authorised for this portal."
+                if role else "Invalid username or password."
+            )}
         ])
     request.session.clear()
     request.session["user"] = {"username": username, "role": role}
     request.session["_csrf_token"] = secrets.token_urlsafe(32)
     log_action(username, "Logged in")
-    return RedirectResponse("/fdr/dashboard", status_code=303)
+    return RedirectResponse(portal_for_role(role), status_code=303)
 
 
 # ---------- Vault ----------

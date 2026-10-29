@@ -7,24 +7,34 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<main class="container" style="max-width:520px;margin:55px auto;">
+<main class="container login-page" style="max-width:760px;margin:40px auto;">
     <a class="brand-lockup" href="/" aria-label="Verisure home"><img src="/static/verisure-logo.png" alt="Verisure logo"><span><strong>Verisure</strong><small>Verification + Assurance</small></span></a>
     <div class="header-box" style="margin-top:24px;">
-    <p class="eyebrow">AICTE REGULATION WORKSPACE</p>
-    <h1>Sign in to your workspace</h1>
-    <p>Access is based on your assigned role and institution scope.</p>
-    {% for message in messages %}
-    <div class="notice {{ 'error' if message.type == 'error' else 'success' }}">{{ message.text }}</div>
-    {% endfor %}
-    <form method="post" action="/login">
-        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <label for="username">Username</label>
-        <input id="username" type="text" name="username" autocomplete="username" required>
-        <label for="password">Password</label>
-        <input id="password" type="password" name="password" autocomplete="current-password" required>
-        <button class="button primary auth-submit" type="submit">Sign in</button>
-    </form>
-    <div class="info"><strong>Prototype built for SIH 2026</strong><p>Synthetic records and simulated bank verification only.</p></div>
+        <p class="eyebrow">AICTE SECURITY DEPOSIT / FDR PORTAL</p>
+        <h1>Sign in to your workspace</h1>
+        <p>Select the portal that matches your assigned role, then enter your credentials.</p>
+        {% for message in messages %}<div class="{{ message.type }}" role="alert">{{ message.text }}</div>{% endfor %}
+        <form method="post" action="/login">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <fieldset class="role-picker">
+                <legend>Choose your role</legend>
+                <div class="role-grid">
+                {% for value, label, detail in [
+                    ("Institution", "Institution", "Submit and track your FDRs"),
+                    ("Scrutiny Officer", "Scrutiny Officer", "Verify and review records"),
+                    ("Competent Authority", "Competent Authority", "Approve controlled actions"),
+                    ("Bank Verifier", "Bank Verifier", "Respond to verification requests"),
+                    ("Admin", "Admin", "Manage users and system access")
+                ] %}
+                <label class="role-card"><input type="radio" name="selected_role" value="{{ value }}" required><strong>{{ label }}</strong><small>{{ detail }}</small></label>
+                {% endfor %}
+                </div>
+            </fieldset>
+            <label for="username">Username</label><input id="username" type="text" name="username" autocomplete="username" required>
+            <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required>
+            <button class="button primary" type="submit">Sign in securely</button>
+        </form>
+        <div class="info" style="margin-top:18px;"><strong>Prototype built for SIH 2026</strong><p>Role selection is enforced against the stored account role. Synthetic records and simulated bank verification only.</p></div>
     </div>
 </main>
 </body>
