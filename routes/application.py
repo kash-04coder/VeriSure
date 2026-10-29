@@ -53,6 +53,7 @@ import sqlite3
 import documents
 import hash_chain
 from fdr_portal import init_fdr_db, router as fdr_router, scan_deadlines
+from routes.bank_api import router as bank_api_router
 from security import validate_upload
 from routes.dependencies import ROLE_GROUPS, portal_for_role
 from routes.portals import router as portal_router
@@ -110,6 +111,7 @@ app = FastAPI(title="Verisure · AICTE Security Deposit / FDR Portal", lifespan=
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 app.include_router(fdr_router)
+app.include_router(bank_api_router)
 app.include_router(portal_router)
 
 
